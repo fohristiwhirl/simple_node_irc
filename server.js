@@ -12,6 +12,11 @@
 	The final parameter in a list of parameters can be
 	indicated with a colon also. It is the only parameter
 	that can contain spaces.
+
+	Numeric replies seem to be in format:
+		:[server] [number] [recipient's nick] [other parameters]
+
+	Internally, we always store channel names with a leading "#".
 */
 
 const net = require("net");
@@ -103,10 +108,12 @@ function make_channel(chan_name) {
 			return;
 		}
 
+		let source = conn.id();
+
 		Object.keys(channel.connections).forEach((nick) => {
 			if (nick !== conn.nick) {
 				let out_conn = channel.connections[nick];
-				out_conn.write(`:${conn.id()} PRIVMSG ${chan_name} ${msg}` + "\r\n");
+				out_conn.write(`:${source} PRIVMSG ${chan_name} ${msg}` + "\r\n");
 			}
 		});
 	};
@@ -164,6 +171,9 @@ function make_irc_server() {
 // ---------------------------------------------------------------------------------------------------
 
 function new_connection(irc, handlers, socket) {
+
+	// In principle, having some base object to inherit from is possible,
+	// but it would require a bit of work since the closure causes issues.
 
 	let conn;
 
