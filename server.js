@@ -11,13 +11,6 @@ const PORT = 6667;
 const WELCOME_MSG = ":Welcome to the server!";
 
 // ---------------------------------------------------------------------------------------------------
-// Global state...
-
-let irc;
-let handlers;
-let server;
-
-// ---------------------------------------------------------------------------------------------------
 
 function is_alphanumeric(str) {
 	let i;
@@ -151,7 +144,7 @@ function make_irc_server() {
 
 // ---------------------------------------------------------------------------------------------------
 
-function new_connection(socket) {
+function new_connection(irc, input_handlers, socket) {
 
 	let conn;
 
@@ -256,10 +249,10 @@ function new_connection(socket) {
 
 		// Dynamically call one of the "handle_XYZ" functions...
 
-		let handler = handlers["handle_" + tokens[0]];
+		let handler = input_handlers["handle_" + tokens[0]];
 
 		if (typeof(handler) === "function") {
-			handler(conn, msg, tokens);
+			handler(irc, conn, msg, tokens);
 		}
 	};
 }
@@ -267,110 +260,127 @@ function new_connection(socket) {
 // ---------------------------------------------------------------------------------------------------
 // Handlers are defined as methods in an object so they can be dynamically called easily.
 
-handlers = {};
+function make_handlers() {
 
-handlers.handle_NICK = (conn, msg, tokens) => {
+	let handlers = {};
 
-	if (tokens.length < 2) {
-		return;
-	}
+	handlers.handle_NICK = (irc, conn, msg, tokens) => {
 
-	if (nick_is_legal(tokens[1]) === false) {
-		conn.numeric(432, ":Erroneus nickname");
-		return;
-	}
+		if (tokens.length < 2) {
+			return;
+		}
 
-	if (irc.nick_in_use(tokens[1]) ) {
-		conn.numeric(433, ":Nickname is already in use");
-		return;
-	}
+		if (nick_is_legal(tokens[1]) === false) {
+			conn.numeric(432, ":Erroneus nickname");
+			return;
+		}
 
-	let had_nick_already = (conn.nick !== undefined);
+		if (irc.nick_in_use(tokens[1]) ) {
+			conn.numeric(433, ":Nickname is already in use");
+			return;
+		}
 
-	irc.remove_conn(conn);
-	conn.nick = tokens[1];
-	irc.add_conn(conn);
+		let had_nick_already = (conn.nick !== undefined);
 
-	if (had_nick_already === false && conn.user !== undefined) {		// We just completed registration
-		conn.numeric(1, WELCOME_MSG);
-	}
-};
+		irc.remove_conn(conn);
+		conn.nick = tokens[1];
+		irc.add_conn(conn);
 
-handlers.handle_USER = (conn, msg, tokens) => {
+		if (had_nick_already === false && conn.user !== undefined) {		// We just completed registration
+			conn.numeric(1, WELCOME_MSG);
+		}
+	};
 
-	if (tokens.length < 2) {
-		return;
-	}
+	handlers.handle_USER = (irc, conn, msg, tokens) => {
 
-	if (user_is_legal(tokens[1]) === false) {
-		return;
-	}
+		if (tokens.length < 2) {
+			return;
+		}
 
-	if (conn.user !== undefined) {										// Can't change user after it's set
-		return;
-	}
+		if (user_is_legal(tokens[1]) === false) {
+			return;
+		}
 
-	conn.user = tokens[1];
+		if (conn.user !== undefined) {										// Can't change user after it's set
+			return;
+		}
 
-	if (conn.nick !== undefined) {										// We just completed registration
-		conn.numeric(1, WELCOME_MSG);
-	}
-};
+		conn.user = tokens[1];
 
-handlers.handle_JOIN = (conn, msg, tokens) => {
+		if (conn.nick !== undefined) {										// We just completed registration
+			conn.numeric(1, WELCOME_MSG);
+		}
+	};
 
-	if (tokens.length < 2) {
-		return;
-	}
+	handlers.handle_JOIN = (irc, conn, msg, tokens) => {
 
-	let chan_name = ensure_leading_hash(tokens[1]);
+		if (tokens.length < 2) {
+			return;
+		}
 
-	if (chan_is_legal(chan_name) === false) {
-		return;
-	}
+		let chan_name = ensure_leading_hash(tokens[1]);
 
-	conn.join(chan_name);
-};
+		if (chan_is_legal(chan_name) === false) {
+			return;
+		}
 
-handlers.handle_PART = (conn, msg, tokens) => {
+		conn.join(chan_name);
+	};
 
-	if (tokens.length < 2) {
-		return;
-	}
+	handlers.handle_PART = (irc, conn, msg, tokens) => {
 
-	let chan_name = ensure_leading_hash(tokens[1]);
+		if (tokens.length < 2) {
+			return;
+		}
 
-	if (chan_is_legal(chan_name) === false) {
-		return;
-	}
+		let chan_name = ensure_leading_hash(tokens[1]);
 
-	conn.part(chan_name);
-};
+		if (chan_is_legal(chan_name) === false) {
+			return;
+		}
 
-handlers.handle_PRIVMSG = (conn, msg, tokens) => {
+		conn.part(chan_name);
+	};
 
-	if (tokens.length < 3) {
-		return;
-	}
+	handlers.handle_PRIVMSG = (irc, conn, msg, tokens) => {
 
-	let chan_name = ensure_leading_hash(tokens[1]);
+		if (tokens.length < 3) {
+			return;
+		}
 
-	if (chan_is_legal(chan_name) === false) {
-		return;
-	}
+		let chan_name = ensure_leading_hash(tokens[1]);
 
-	let channel = conn.channels[chan_name];
+		if (chan_is_legal(chan_name) === false) {
+			return;
+		}
 
-	if (channel === undefined) {
-		return;
-	}
+		let channel = conn.channels[chan_name];
 
-	let s = tokens.slice(2).join(" ");
-	channel.normal_message(conn, s);
-};
+		if (channel === undefined) {
+			return;
+		}
+
+		let s = tokens.slice(2).join(" ");
+		channel.normal_message(conn, s);
+	};
+
+	return handlers;
+}
 
 // ---------------------------------------------------------------------------------------------------
 
-irc = make_irc_server();
-server = net.createServer(new_connection);
-server.listen(PORT, SERVER);
+function main() {
+
+	let irc = make_irc_server();
+	let handlers = make_handlers();
+
+	let server = net.createServer((socket) => {
+		new_connection(irc, handlers, socket);
+	});
+
+	server.listen(PORT, SERVER);
+}
+
+// ---------------------------------------------------------------------------------------------------
+
+main();
