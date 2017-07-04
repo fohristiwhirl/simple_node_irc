@@ -58,48 +58,6 @@ function ensure_leading_hash(str) {
 
 // ---------------------------------------------------------------------------------------------------
 
-function make_irc_server() {
-
-	// Use Object.create(null) when using an object as a map
-	// to avoid issued with prototypes.
-
-	let i = {
-		nicks: Object.create(null),
-		channels: Object.create(null)
-	};
-
-	i.nick_in_use = (nick) => {
-		if (i.nicks[nick]) {
-			return true;
-		} else {
-			return false;
-		}
-	};
-
-	i.remove_conn = (conn) => {
-		delete i.nicks[conn.nick];
-	};
-
-	i.add_conn = (conn) => {
-		i.nicks[conn.nick] = conn;
-	};
-
-	i.get_channel = (chan_name) => {
-		return i.channels[chan_name];		// Can return undefined
-	};
-
-	i.get_or_make_channel = (chan_name) => {
-		if (i.channels[chan_name] === undefined) {
-			i.channels[chan_name] = make_channel(chan_name);
-		}
-		return i.channels[chan_name];
-	};
-
-	return i;
-}
-
-// ---------------------------------------------------------------------------------------------------
-
 function make_channel(chan_name) {
 
 	let channel = {
@@ -151,7 +109,51 @@ function make_channel(chan_name) {
 
 // ---------------------------------------------------------------------------------------------------
 
+function make_irc_server() {
+
+	// Use Object.create(null) when using an object as a map
+	// to avoid issued with prototypes.
+
+	let i = {
+		nicks: Object.create(null),
+		channels: Object.create(null)
+	};
+
+	i.nick_in_use = (nick) => {
+		if (i.nicks[nick]) {
+			return true;
+		} else {
+			return false;
+		}
+	};
+
+	i.remove_conn = (conn) => {
+		delete i.nicks[conn.nick];
+	};
+
+	i.add_conn = (conn) => {
+		i.nicks[conn.nick] = conn;
+	};
+
+	i.get_channel = (chan_name) => {
+		return i.channels[chan_name];		// Can return undefined
+	};
+
+	i.get_or_make_channel = (chan_name) => {
+		if (i.channels[chan_name] === undefined) {
+			i.channels[chan_name] = make_channel(chan_name);
+		}
+		return i.channels[chan_name];
+	};
+
+	return i;
+}
+
+// ---------------------------------------------------------------------------------------------------
+
 function new_connection(socket) {
+
+	let conn;
 
 	// Setup socket actions...
 
@@ -166,11 +168,13 @@ function new_connection(socket) {
 		conn.close();
 	});
 
-	socket.on("error", () => {});
+	socket.on("error", () => {
+		return;
+	});
 
 	// Setup the conn object...
 
-	let conn = {
+	conn = {
 		nick: undefined,
 		user: undefined,
 		socket : socket,
