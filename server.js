@@ -158,7 +158,7 @@ function new_connection(irc, input_handlers, socket) {
 	});
 
 	socket.on("close", () => {
-		conn.close();
+		conn.part_all_channels();
 	});
 
 	socket.on("error", () => {
@@ -174,10 +174,8 @@ function new_connection(irc, input_handlers, socket) {
 		channels : Object.create(null)		// Use Object.create(null) when using an object as a map
 	};
 
-	conn.close = () => {
-		Object.keys(conn.channels).forEach((chan_name) => {
-			conn.part(chan_name);
-		});
+	conn.id = () => {
+		return `:${conn.nick}!${conn.user}@${conn.socket.remoteAddress}`;
 	};
 
 	conn.write = (msg) => {
@@ -195,10 +193,6 @@ function new_connection(irc, input_handlers, socket) {
 		let username = conn.nick || "*";
 
 		conn.write(`:${SERVER} ${n} ${username} ${msg}` + "\r\n");
-	};
-
-	conn.id = () => {
-		return `:${conn.nick}!${conn.user}@${conn.socket.remoteAddress}`;
 	};
 
 	conn.join = (chan_name) => {
@@ -233,6 +227,12 @@ function new_connection(irc, input_handlers, socket) {
 
 		channel.remove_conn(conn);
 		delete conn.channels[chan_name];
+	};
+
+	conn.part_all_channels = () => {
+		Object.keys(conn.channels).forEach((chan_name) => {
+			conn.part(chan_name);
+		});
 	};
 
 	conn.handle_line = (msg) => {
