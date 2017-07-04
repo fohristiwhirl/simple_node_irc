@@ -54,7 +54,7 @@ function ensure_leading_hash(str) {
 function make_channel(chan_name) {
 
 	let channel = {
-		connections: Object.create(null)
+		connections: Object.create(null)	// nick --> conn object
 	};
 
 	channel.remove_conn = (conn) => {
@@ -144,7 +144,7 @@ function make_irc_server() {
 
 // ---------------------------------------------------------------------------------------------------
 
-function new_connection(irc, input_handlers, socket) {
+function new_connection(irc, handlers, socket) {
 
 	let conn;
 
@@ -183,7 +183,7 @@ function new_connection(irc, input_handlers, socket) {
 		conn.socket.write(msg);
 	};
 
-	conn.numeric = (n, msg) => {
+	conn.numeric = (n, msg) => {			// Send a numeric reply to the client.
 
 		n = n.toString();
 
@@ -250,7 +250,7 @@ function new_connection(irc, input_handlers, socket) {
 
 		// Dynamically call one of the "handle_XYZ" functions...
 
-		let handler = input_handlers["handle_" + tokens[0]];
+		let handler = handlers["handle_" + tokens[0]];
 
 		if (typeof(handler) === "function") {
 			handler(irc, conn, msg, tokens);
