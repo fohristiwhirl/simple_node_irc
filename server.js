@@ -7,8 +7,9 @@ const net = require("net");
 
 const SERVER = "127.0.0.1";
 const PORT = 6667;
+const SOFTWARE = "simple_node_irc";
 
-const WELCOME_MSG = ":Welcome to the server!";
+const STARTUP_TIME = (new Date()).toTimeString();
 
 // ---------------------------------------------------------------------------------------------------
 
@@ -42,7 +43,14 @@ function chan_is_legal(str) {
 	return false;
 }
 
-function ensure_leading_hash(str) {
+function sanitize_channel_name(str) {
+
+	// Remove leading colon if present, and make sure channel name starts with "#"
+	// but do no other tests for legality.
+
+	if (str.charAt(0) === ":") {
+		str = str.slice(1);
+	}
 	if (str.charAt(0) !== "#") {
 		str = "#" + str;
 	}
@@ -107,39 +115,39 @@ function make_irc_server() {
 	// Use Object.create(null) when using an object as a map
 	// to avoid issued with prototypes.
 
-	let i = {
+	let irc = {
 		nicks: Object.create(null),			// nick --> conn object
 		channels: Object.create(null)		// chan_name --> channel object
 	};
 
-	i.nick_in_use = (nick) => {
-		if (i.nicks[nick]) {
+	irc.nick_in_use = (nick) => {
+		if (irc.nicks[nick]) {
 			return true;
 		} else {
 			return false;
 		}
 	};
 
-	i.remove_conn = (conn) => {
-		delete i.nicks[conn.nick];
+	irc.remove_conn = (conn) => {
+		delete irc.nicks[conn.nick];
 	};
 
-	i.add_conn = (conn) => {
-		i.nicks[conn.nick] = conn;
+	irc.add_conn = (conn) => {
+		irc.nicks[conn.nick] = conn;
 	};
 
-	i.get_channel = (chan_name) => {
-		return i.channels[chan_name];		// Can return undefined
+	irc.get_channel = (chan_name) => {
+		return irc.channels[chan_name];		// Can return undefined
 	};
 
-	i.get_or_make_channel = (chan_name) => {
-		if (i.channels[chan_name] === undefined) {
-			i.channels[chan_name] = make_channel(chan_name);
+	irc.get_or_make_channel = (chan_name) => {
+		if (irc.channels[chan_name] === undefined) {
+			irc.channels[chan_name] = make_channel(chan_name);
 		}
-		return i.channels[chan_name];
+		return irc.channels[chan_name];
 	};
 
-	return i;
+	return irc;
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -236,6 +244,12 @@ function new_connection(irc, handlers, socket) {
 		});
 	};
 
+	conn.welcome = () => {
+		conn.numeric(1, `:Welcome to the server!`);
+		conn.numeric(2, `:Your host is ${SERVER}, running ${SOFTWARE}`);
+		conn.numeric(3, `:This server started up at ${STARTUP_TIME}`);
+	};
+
 	conn.handle_line = (msg) => {
 
 		console.log(conn.id() + " ... " + msg);
@@ -271,12 +285,18 @@ function make_handlers() {
 			return;
 		}
 
-		if (nick_is_legal(tokens[1]) === false) {
+		let requested_nick = tokens[1];
+
+		if (requested_nick.charAt(0) === ":") {								// I've seen mIRC do this sometimes
+			requested_nick = requested_nick.slice(1);
+		}
+
+		if (nick_is_legal(requested_nick) === false) {
 			conn.numeric(432, ":Erroneus nickname");
 			return;
 		}
 
-		if (irc.nick_in_use(tokens[1]) ) {
+		if (irc.nick_in_use(requested_nick) ) {
 			conn.numeric(433, ":Nickname is already in use");
 			return;
 		}
@@ -288,7 +308,7 @@ function make_handlers() {
 		irc.add_conn(conn);
 
 		if (had_nick_already === false && conn.user !== undefined) {		// We just completed registration
-			conn.numeric(1, WELCOME_MSG);
+			conn.welcome();
 		}
 	};
 
@@ -309,7 +329,7 @@ function make_handlers() {
 		conn.user = tokens[1];
 
 		if (conn.nick !== undefined) {										// We just completed registration
-			conn.numeric(1, WELCOME_MSG);
+			conn.welcome();
 		}
 	};
 
@@ -319,7 +339,7 @@ function make_handlers() {
 			return;
 		}
 
-		let chan_name = ensure_leading_hash(tokens[1]);
+		let chan_name = sanitize_channel_name(tokens[1]);
 
 		if (chan_is_legal(chan_name) === false) {
 			return;
@@ -334,7 +354,7 @@ function make_handlers() {
 			return;
 		}
 
-		let chan_name = ensure_leading_hash(tokens[1]);
+		let chan_name = sanitize_channel_name(tokens[1]);
 
 		if (chan_is_legal(chan_name) === false) {
 			return;
@@ -364,6 +384,29 @@ function make_handlers() {
 		let s = tokens.slice(2).join(" ");
 		channel.normal_message(conn, s);
 	};
+
+	handlers.handle_WHOIS = (irc, conn, msg, tokens) => {
+
+		if (tokens.length < 2) {
+			return;
+		}
+
+		let target = irc.nicks[tokens[1]];
+
+		if (target === undefined) {
+			conn.numeric(401, `${tokens[1]} :No such nick`);
+			return;
+		}
+
+		// FIXME: there's some more stuff we're supposed to send...
+
+		conn.numeric(311, `${target.nick} ${target.user} ${target.socket.remoteAddress} * :${target.user}`);
+		conn.numeric(318, `${target.nick} :End of /WHOIS list`);
+	};
+
+	handlers.handle_PING = (irc, conn, msg, tokens) => {
+		conn.write(`PONG ${SERVER} ${conn.socket.remoteAddress}` + "\r\n");
+	}
 
 	return handlers;
 }
