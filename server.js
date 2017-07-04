@@ -113,7 +113,7 @@ function make_channel(chan_name) {
 
 	channel.name_reply = (conn) => {
 		conn.numeric(353, `= ${chan_name} :` + Object.keys(channel.connections).join(" "));
-		conn.numeric(366, `${chan_name} :End of NAMES list`);
+		conn.numeric(366, `${chan_name} :End of /NAMES list`);
 	};
 
 	return channel;
@@ -202,7 +202,7 @@ function new_connection(irc, handlers, socket) {
 		conn.socket.write(msg);
 	};
 
-	conn.numeric = (n, msg) => {			// Send a numeric reply to the client.
+	conn.numeric = (n, msg) => {			// Send a numeric reply to the client...
 
 		n = n.toString();
 
@@ -210,9 +210,13 @@ function new_connection(irc, handlers, socket) {
 			n = "0" + n;
 		}
 
-		let nick = conn.nick || "*";
+		let nick = conn.nick || "*";		// i.e. use "*" if nick is undefined
 
-		conn.write(`:${SERVER} ${n} ${nick} ${msg}` + "\r\n");		// FIXME? Is this right? We always send the receiver's nick?
+		conn.write(`:${SERVER} ${n} ${nick} ${msg}` + "\r\n");
+
+		// Is this right? We always send the receiver's nick? I suspect it is,
+		// i.e. in multiple-server scenarios this is probably used when sending
+		// a message via another server, to identify the recipient.
 	};
 
 	conn.join = (chan_name) => {
