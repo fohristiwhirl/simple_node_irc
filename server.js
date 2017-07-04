@@ -1,7 +1,18 @@
 "use strict";
 
-// A simple-minded IRC server written as an exercise in NodeJS.
-// See https://modern.ircdocs.horse for useful docs.
+/*
+	A simple-minded IRC server written as an exercise in NodeJS.
+	See https://modern.ircdocs.horse for useful docs.
+
+	Some notes:
+
+	A message may or may not have a prefix. If it does,
+	the prefix must start with a colon.
+
+	The final parameter in a list of parameters can be
+	indicated with a colon also. It is the only parameter
+	that can contain spaces.
+*/
 
 const net = require("net");
 
@@ -66,13 +77,13 @@ function make_channel(chan_name) {
 	};
 
 	channel.remove_conn = (conn) => {
-		channel.raw_send_all(`${conn.id()} PART ${chan_name}`);
+		channel.raw_send_all(`:${conn.id()} PART ${chan_name}`);
 		delete channel.connections[conn.nick];
 	};
 
 	channel.add_conn = (conn) => {
 		channel.connections[conn.nick] = conn;
-		channel.raw_send_all(`${conn.id()} JOIN ${chan_name}`);
+		channel.raw_send_all(`:${conn.id()} JOIN ${chan_name}`);
 	};
 
 	channel.raw_send_all = (msg) => {
@@ -95,7 +106,7 @@ function make_channel(chan_name) {
 		Object.keys(channel.connections).forEach((nick) => {
 			if (nick !== conn.nick) {
 				let out_conn = channel.connections[nick];
-				out_conn.write(`${conn.id()} PRIVMSG ${chan_name} ${msg}` + "\r\n");
+				out_conn.write(`:${conn.id()} PRIVMSG ${chan_name} ${msg}` + "\r\n");
 			}
 		});
 	};
@@ -184,7 +195,7 @@ function new_connection(irc, handlers, socket) {
 	};
 
 	conn.id = () => {
-		return `:${conn.nick}!${conn.user}@${conn.socket.remoteAddress}`;
+		return `${conn.nick}!${conn.user}@${conn.socket.remoteAddress}`;
 	};
 
 	conn.write = (msg) => {
@@ -199,9 +210,9 @@ function new_connection(irc, handlers, socket) {
 			n = "0" + n;
 		}
 
-		let username = conn.nick || "*";
+		let nick = conn.nick || "*";
 
-		conn.write(`:${SERVER} ${n} ${username} ${msg}` + "\r\n");
+		conn.write(`:${SERVER} ${n} ${nick} ${msg}` + "\r\n");		// FIXME? Is this right? We always send the receiver's nick?
 	};
 
 	conn.join = (chan_name) => {
@@ -256,7 +267,15 @@ function new_connection(irc, handlers, socket) {
 
 		let tokens = msg.split(" ");
 
-		// Ignore lines if we haven't finished registration...
+		if (tokens.length === 0) {
+			return;
+		}
+
+		if (tokens[0].charAt(0) === ":") {		// The client sent a prefix, which we can ignore.
+			tokens = tokens.slice(1);
+		}
+
+		// Ignore most commands if we haven't finished registration...
 
 		if (tokens[0] !== "NICK" && tokens[0] !== "USER" && (conn.nick === undefined || conn.user === undefined)) {
 			return;
@@ -282,6 +301,7 @@ function make_handlers() {
 	handlers.handle_NICK = (irc, conn, msg, tokens) => {
 
 		if (tokens.length < 2) {
+			conn.numeric(431, ":No nickname given");
 			return;
 		}
 
@@ -369,7 +389,7 @@ function make_handlers() {
 			return;
 		}
 
-		let chan_name = ensure_leading_hash(tokens[1]);
+		let chan_name = sanitize_channel_name(tokens[1]);
 
 		if (chan_is_legal(chan_name) === false) {
 			return;
