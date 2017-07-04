@@ -108,8 +108,8 @@ function make_irc_server() {
 	// to avoid issued with prototypes.
 
 	let i = {
-		nicks: Object.create(null),
-		channels: Object.create(null)
+		nicks: Object.create(null),			// nick --> conn object
+		channels: Object.create(null)		// chan_name --> channel object
 	};
 
 	i.nick_in_use = (nick) => {
@@ -166,12 +166,13 @@ function new_connection(irc, input_handlers, socket) {
 	});
 
 	// Setup the conn object...
+	// Use Object.create(null) when using an object as a map
 
 	conn = {
 		nick: undefined,
 		user: undefined,
 		socket : socket,
-		channels : Object.create(null)		// Use Object.create(null) when using an object as a map
+		channels : Object.create(null)		// chan_name --> channel object
 	};
 
 	conn.id = () => {
