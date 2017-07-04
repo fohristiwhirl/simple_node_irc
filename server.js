@@ -20,13 +20,11 @@ let server;
 // ---------------------------------------------------------------------------------------------------
 
 function is_alphanumeric(str) {
-	let code, i, len;
+	let i;
 
-	for (i = 0, len = str.length; i < len; i++) {
-		code = str.charCodeAt(i);
-		if ((code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122)) {
-			continue;
-		} else {
+	for (i = 0; i < str.length; i += 1) {
+		let code = str.charCodeAt(i);
+		if (((code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122)) === false) {
 			return false;
 		}
 	}
@@ -65,39 +63,39 @@ function make_irc_server() {
 	// Use Object.create(null) when using an object as a map
 	// to avoid issued with prototypes.
 
-	let irc = {
+	let i = {
 		nicks: Object.create(null),
-		channels: Object.create(null),
+		channels: Object.create(null)
 	};
 
-	irc.nick_in_use = (nick) => {
-		if (irc.nicks[nick]) {
+	i.nick_in_use = (nick) => {
+		if (i.nicks[nick]) {
 			return true;
 		} else {
 			return false;
 		}
 	};
 
-	irc.remove_conn = (conn) => {
-		delete irc.nicks[conn.nick];
+	i.remove_conn = (conn) => {
+		delete i.nicks[conn.nick];
 	};
 
-	irc.add_conn = (conn) => {
-		irc.nicks[conn.nick] = conn;
+	i.add_conn = (conn) => {
+		i.nicks[conn.nick] = conn;
 	};
 
-	irc.get_channel = (chan_name) => {
-		return irc.channels[chan_name];		// Can return undefined
+	i.get_channel = (chan_name) => {
+		return i.channels[chan_name];		// Can return undefined
 	};
 
-	irc.get_or_make_channel = (chan_name) => {
-		if (irc.channels[chan_name] === undefined) {
-			irc.channels[chan_name] = make_channel(chan_name);
+	i.get_or_make_channel = (chan_name) => {
+		if (i.channels[chan_name] === undefined) {
+			i.channels[chan_name] = make_channel(chan_name);
 		}
-		return irc.channels[chan_name];
+		return i.channels[chan_name];
 	};
 
-	return irc;
+	return i;
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -105,7 +103,7 @@ function make_irc_server() {
 function make_channel(chan_name) {
 
 	let channel = {
-		connections: Object.create(null),
+		connections: Object.create(null)
 	};
 
 	channel.remove_conn = (conn) => {
@@ -119,10 +117,10 @@ function make_channel(chan_name) {
 	};
 
 	channel.raw_send_all = (msg) => {
-		for (let nick of Object.keys(channel.connections)) {
+		Object.keys(channel.connections).forEach((nick) => {
 			let conn = channel.connections[nick];
 			conn.write(msg + "\r\n");
-		}
+		});
 	};
 
 	channel.normal_message = (conn, msg) => {
@@ -135,15 +133,12 @@ function make_channel(chan_name) {
 			return;
 		}
 
-		for (let nick of Object.keys(channel.connections)) {
-
-			if (nick === conn.nick) {		// Don't send back messages to the source of them
-				continue;
+		Object.keys(channel.connections).forEach((nick) => {
+			if (nick !== conn.nick) {
+				let out_conn = channel.connections[nick];
+				out_conn.write(`${conn.id()} PRIVMSG ${chan_name} ${msg}` + "\r\n");
 			}
-
-			let out_conn = channel.connections[nick];
-			out_conn.write(`${conn.id()} PRIVMSG ${chan_name} ${msg}\r\n`);
-		}
+		});
 	};
 
 	channel.name_reply = (conn) => {
@@ -162,9 +157,9 @@ function new_connection(socket) {
 
 	socket.on("data", (data) => {
 		let lines = data.toString().split("\n");
-		for (let line of lines) {
+		lines.forEach((line) => {
 			conn.handle_line(line);
-		}
+		});
 	});
 
 	socket.on("close", () => {
@@ -179,13 +174,13 @@ function new_connection(socket) {
 		nick: undefined,
 		user: undefined,
 		socket : socket,
-		channels : Object.create(null),		// Use Object.create(null) when using an object as a map
+		channels : Object.create(null)		// Use Object.create(null) when using an object as a map
 	};
 
 	conn.close = () => {
-		for (let chan_name of Object.keys(conn.channels)) {
+		Object.keys(conn.channels).forEach((chan_name) => {
 			conn.part(chan_name);
-		}
+		});
 	};
 
 	conn.write = (msg) => {
@@ -202,7 +197,7 @@ function new_connection(socket) {
 
 		let username = conn.nick || "*";
 
-		conn.write(`:${SERVER} ${n} ${username} ${msg}\r\n`);
+		conn.write(`:${SERVER} ${n} ${username} ${msg}` + "\r\n");
 	};
 
 	conn.id = () => {
