@@ -180,19 +180,15 @@ function make_irc_server() {
 
 	irc.change_nick = (conn, old_nick, new_nick) => {
 
-		irc.nicks[new_nick] = irc.nicks[old_nick];
-		delete irc.nicks[old_nick];
-
 		// Figure out who has to be told about this...
 
-		let all_recipients = Object.create(null);
+		let all_recipients = Object.create(null);	// Using this as a set, so things can only be in it once.
 
-		Object.keys(conn.channels).forEach((chan_name) => {
+		all_recipients[old_nick] = conn;			// Always inform the changer.
 
-			let channel = conn.channels[chan_name];
-
-			channel.connections.forEach((conn) => {
-				all_recipients[conn.nick] = conn;
+		conn.channel_list().forEach((channel) => {
+			channel.connections.forEach((out_conn) => {
+				all_recipients[out_conn.nick] = out_conn;
 			});
 		});
 
@@ -202,6 +198,10 @@ function make_irc_server() {
 			let out_conn = irc.nicks[out_nick];
 			out_conn.write(`:${source} NICK ${new_nick}` + "\r\n");
 		});
+
+		irc.nicks[new_nick] = conn;
+		delete irc.nicks[old_nick];
+		conn.nick = new_nick;
 	};
 
 	irc.get_channel = (chan_name) => {
@@ -258,6 +258,17 @@ function new_connection(irc, handlers, socket) {
 	conn.id = () => {
 		return `${conn.nick}!${conn.user}@${conn.address}`;
 	};
+
+	conn.channel_list = () => {
+
+		let list = [];
+
+		Object.keys(conn.channels).forEach((key) => {
+			list.push(conn.channels[key]);
+		});
+
+		return list;
+	}
 
 	conn.write = (msg) => {
 		conn.socket.write(msg);
@@ -388,11 +399,11 @@ function make_handlers() {
 
 		let old_nick = conn.nick;
 
-		conn.nick = tokens[1];
-
 		if (old_nick !== undefined) {
-			irc.change_nick(conn, old_nick, conn.nick);
+			irc.change_nick(conn, old_nick, requested_nick);
+			conn.nick = requested_nick;
 		} else {
+			conn.nick = requested_nick;
 			irc.add_conn(conn);		// This can be done even before conn.user is set.
 		}
 
