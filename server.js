@@ -82,12 +82,8 @@ function chan_is_legal(str) {
 
 function sanitize_channel_name(str) {
 
-	// Remove leading colon if present, and make sure channel name starts with "#"
-	// but do no other tests for legality.
+	// Make sure channel name starts with "#" but do no other tests for legality.
 
-	if (str.charAt(0) === ":") {
-		str = str.slice(1);
-	}
 	if (str.charAt(0) !== "#") {
 		str = "#" + str;
 	}
@@ -110,9 +106,11 @@ function make_channel(chan_name) {
 		return values(channel.connections);
 	};
 
-	channel.remove_conn = (conn) => {
+	channel.remove_conn = (conn, silent) => {
 		if (channel.connections[conn.nick] !== undefined) {
-			channel.raw_send_all(`:${conn.id()} PART ${chan_name}`);
+			if (silent === false || silent === undefined) {
+				channel.raw_send_all(`:${conn.id()} PART ${chan_name}`);
+			}
 			delete channel.connections[conn.nick];
 		}
 	};
@@ -136,11 +134,7 @@ function make_channel(chan_name) {
 
 	channel.normal_message = (conn, msg) => {
 
-		if (msg.charAt(0) !== ":") {
-			msg = ":" + msg;
-		}
-
-		if (msg.length < 2) {
+		if (msg.length < 1) {
 			return;
 		}
 
@@ -148,7 +142,7 @@ function make_channel(chan_name) {
 
 		channel.conn_list().forEach((out_conn) => {
 			if (conn !== out_conn) {
-				out_conn.write(`:${source} PRIVMSG ${chan_name} ${msg}` + "\r\n");
+				out_conn.write(`:${source} PRIVMSG ${chan_name} :${msg}` + "\r\n");
 			}
 		});
 	};
@@ -181,8 +175,22 @@ function make_irc_server() {
 		return false;
 	};
 
-	irc.remove_conn = (conn) => {
-		conn.part_all_channels();
+	irc.disconnect = (conn, reason) => {
+
+		if (conn === undefined || irc.nicks[conn.nick] === undefined) {
+			return;
+		}
+
+		reason = reason || "Quitting";
+
+		let all_viewers = conn.viewer_list();
+
+		conn.part_all_channels(true);		// Do this AFTER getting the viewer list
+
+		all_viewers.forEach((out_conn) => {
+			out_conn.write(`:${conn.id()} QUIT :${reason}` + "\r\n");
+		});
+
 		delete irc.nicks[conn.nick];
 	};
 
@@ -254,7 +262,7 @@ function new_connection(irc, handlers, socket) {
 	});
 
 	socket.on("close", () => {
-		irc.remove_conn(conn);				// this will call conn.part_all_channels()
+		irc.disconnect(conn, undefined);	// this will call conn.part_all_channels()
 	});
 
 	socket.on("error", () => {
@@ -342,7 +350,7 @@ function new_connection(irc, handlers, socket) {
 		channel.topic_reply(conn);							// Send a RPL_NOTOPIC or RPL_TOPIC to the client
 	};
 
-	conn.part = (chan_name) => {
+	conn.part = (chan_name, silent) => {
 
 		if (chan_is_legal(chan_name) === false) {
 			return;
@@ -354,13 +362,13 @@ function new_connection(irc, handlers, socket) {
 			return;
 		}
 
-		channel.remove_conn(conn);
+		channel.remove_conn(conn, silent);
 		delete conn.channels[chan_name];
 	};
 
-	conn.part_all_channels = () => {
+	conn.part_all_channels = (silent) => {
 		conn.channel_name_list().forEach((chan_name) => {
-			conn.part(chan_name);
+			conn.part(chan_name, silent);
 		});
 	};
 
@@ -381,6 +389,10 @@ function new_connection(irc, handlers, socket) {
 
 	conn.handle_line = (msg) => {
 
+		// Some subtleties due to the IRC format.
+		// In particular, there can be a source at the start (starts with a colon).
+		// There can also be a space-containing final parameter (also starts with a colon).
+
 		msg = msg.trim();
 
 		if (msg === "") {
@@ -391,14 +403,38 @@ function new_connection(irc, handlers, socket) {
 			console.log("\n" + conn.id() + "\n   " + msg);
 		}
 
-		let tokens = msg.split(" ");
+		if (msg.charAt(0) === ":") {
+
+			// Get rid of this source token...
+
+			let first_space_index = msg.indexOf(" ");
+
+			if (first_space_index === -1) {
+				return;
+			}
+
+			msg = msg.slice(first_space_index);
+		}
+
+		let mid_colon_index = msg.indexOf(":");
+
+		let final_token = undefined;
+		let main_msg = msg;
+
+		if (mid_colon_index > -1) {
+			final_token = msg.slice(mid_colon_index + 1);		// Possibly "" (empty string) or space-containing string
+			main_msg = msg.slice(0, mid_colon_index);
+		}
+
+		let tokens = main_msg.split(" ");
+		tokens = tokens.filter((item) => (item !== ""));		// Get rid of empty strings...
+
+		if (final_token !== undefined) {
+			tokens.push(final_token);							// This can be empty string, so add it after the above filter.
+		}
 
 		if (tokens.length === 0) {
 			return;
-		}
-
-		if (tokens[0].charAt(0) === ":") {		// The client sent a prefix, which we can ignore.
-			tokens = tokens.slice(1);
 		}
 
 		// Ignore most commands if we haven't finished registration...
@@ -412,7 +448,7 @@ function new_connection(irc, handlers, socket) {
 		let handler = handlers["handle_" + tokens[0]];
 
 		if (typeof(handler) === "function") {
-			handler(irc, conn, msg, tokens);
+			handler(irc, conn, tokens);
 		}
 	};
 }
@@ -424,7 +460,7 @@ function make_handlers() {
 
 	let handlers = {};
 
-	handlers.handle_NICK = (irc, conn, msg, tokens) => {
+	handlers.handle_NICK = (irc, conn, tokens) => {
 
 		if (tokens.length < 2) {
 			conn.numeric(431, ":No nickname given");
@@ -432,10 +468,6 @@ function make_handlers() {
 		}
 
 		let requested_nick = tokens[1];
-
-		if (requested_nick.charAt(0) === ":") {								// I've seen mIRC do this sometimes
-			requested_nick = requested_nick.slice(1);
-		}
 
 		if (nick_is_legal(requested_nick) === false) {
 			conn.numeric(432, ":Erroneus nickname");
@@ -467,7 +499,7 @@ function make_handlers() {
 		}
 	};
 
-	handlers.handle_USER = (irc, conn, msg, tokens) => {
+	handlers.handle_USER = (irc, conn, tokens) => {
 
 		if (tokens.length < 2) {
 			return;
@@ -489,7 +521,7 @@ function make_handlers() {
 		}
 	};
 
-	handlers.handle_JOIN = (irc, conn, msg, tokens) => {
+	handlers.handle_JOIN = (irc, conn, tokens) => {
 
 		if (tokens.length < 2) {
 			return;
@@ -504,7 +536,7 @@ function make_handlers() {
 		conn.join(chan_name);
 	};
 
-	handlers.handle_PART = (irc, conn, msg, tokens) => {
+	handlers.handle_PART = (irc, conn, tokens) => {
 
 		if (tokens.length < 2) {
 			return;
@@ -516,10 +548,10 @@ function make_handlers() {
 			return;
 		}
 
-		conn.part(chan_name);
+		conn.part(chan_name, false);
 	};
 
-	handlers.handle_PRIVMSG = (irc, conn, msg, tokens) => {
+	handlers.handle_PRIVMSG = (irc, conn, tokens) => {
 
 		if (tokens.length < 3) {
 			return;
@@ -538,10 +570,11 @@ function make_handlers() {
 		}
 
 		let s = tokens.slice(2).join(" ");
+
 		channel.normal_message(conn, s);
 	};
 
-	handlers.handle_WHOIS = (irc, conn, msg, tokens) => {
+	handlers.handle_WHOIS = (irc, conn, tokens) => {
 
 		if (tokens.length < 2) {
 			return;
@@ -557,7 +590,7 @@ function make_handlers() {
 		target.whois_reply(conn);
 	};
 
-	handlers.handle_PING = (irc, conn, msg, tokens) => {
+	handlers.handle_PING = (irc, conn, tokens) => {
 		conn.write(`PONG ${SERVER} ${conn.address}` + "\r\n");
 	};
 
