@@ -184,7 +184,7 @@ function make_irc_server() {
 		delete irc.nicks[conn.nick];
 	};
 
-	irc.add_conn = (conn) => {						// Should be called once per client, as soon as conn.nick is set
+	irc.add_conn = (conn) => {				// Should be called once per client, as soon as conn.nick is set
 		irc.nicks[conn.nick] = conn;
 	};
 
@@ -201,7 +201,7 @@ function make_irc_server() {
 		irc.add_conn(conn);
 	};
 
-	irc.change_nick = (conn, old_nick, new_nick) => {	// Assumes we've already checked legality of this.
+	irc.change_nick = (conn, old_nick, new_nick) => {
 
 		// The caller should already have checked legality.
 		// That way it can send the client an appropriate error.
@@ -459,6 +459,7 @@ function make_handlers() {
 		}
 
 		if (conn.user !== undefined) {										// Can't change user after it's set
+			conn.numeric(462, ":You may not reregister");
 			return;
 		}
 
