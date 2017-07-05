@@ -28,7 +28,7 @@
 
 const net = require("net");
 
-const SOFTWARE = "simple_node_irc";
+const SOFTWARE = "Simple Node IRC";
 const SERVER = "127.0.0.1";
 const PORT = 6667;
 
