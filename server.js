@@ -138,11 +138,11 @@ function make_channel(chan_name) {
 	// so the keys to the conn map have to be a uid.
 
 	let channel = {
-		connections: Object.create(null)		// map: uid --> conn
+		conns: Object.create(null)		// map: uid --> conn
 	};
 
 	channel.conn_list = () => {
-		return values(channel.connections);
+		return values(channel.conns);
 	};
 
 	channel.nick_list = () => {
@@ -154,21 +154,21 @@ function make_channel(chan_name) {
 	};
 
 	channel.remove_conn = (conn, silent) => {
-		if (channel.connections[conn.uid] !== undefined) {
+		if (channel.conns[conn.uid] !== undefined) {
 			if (silent === false || silent === undefined) {
 				channel.raw_send_all(`:${conn.source()} PART ${chan_name}`);
 			}
-			delete channel.connections[conn.uid];
+			delete channel.conns[conn.uid];
 		}
 	};
 
 	channel.user_present = (conn) => {
-		return channel.connections[conn.uid] !== undefined;
+		return channel.conns[conn.uid] !== undefined;
 	};
 
 	channel.add_conn = (conn) => {
 		if (channel.user_present(conn) === false) {
-			channel.connections[conn.uid] = conn;
+			channel.conns[conn.uid] = conn;
 			channel.raw_send_all(`:${conn.source()} JOIN ${chan_name}`);
 		}
 	};
@@ -213,7 +213,7 @@ function make_irc_server() {
 	// The canonical list of who is connected and what channels exist.
 
 	let irc = {
-		nicks: Object.create(null),			// map: nick --> conn object
+		conns: Object.create(null),			// map: nick --> conn object
 		channels: Object.create(null),		// map: chan_name --> channel object
 	};
 
@@ -225,15 +225,19 @@ function make_irc_server() {
 	}
 
 	irc.nick_in_use = (nick) => {
-		if (irc.nicks[nick] !== undefined) {
+		if (irc.conns[nick] !== undefined) {
 			return true;
 		}
 		return false;
 	};
 
+	irc.conn_from_nick = (nick) => {
+		return irc.conns[nick];				// Can return undefined
+	}
+
 	irc.disconnect = (conn, reason) => {
 
-		if (conn === undefined || irc.nicks[conn.nick] === undefined) {
+		if (conn === undefined || irc.conns[conn.nick] === undefined) {
 			return;
 		}
 
@@ -247,11 +251,11 @@ function make_irc_server() {
 			out_conn.write(`:${conn.source()} QUIT :${reason}` + "\r\n");
 		});
 
-		delete irc.nicks[conn.nick];
+		delete irc.conns[conn.nick];
 	};
 
 	irc.add_conn = (conn) => {				// Should be called once per client, as soon as conn.nick is set
-		irc.nicks[conn.nick] = conn;
+		irc.conns[conn.nick] = conn;
 	};
 
 	irc.set_first_nick = (conn, new_nick) => {
@@ -284,8 +288,8 @@ function make_irc_server() {
 			out_conn.write(`:${conn.source()} NICK ${new_nick}` + "\r\n");		// Note that conn hasn't been updated yet so conn.source() correctly gives the old source.
 		});
 
-		irc.nicks[new_nick] = conn;
-		delete irc.nicks[old_nick];
+		irc.conns[new_nick] = conn;
+		delete irc.conns[old_nick];
 		conn.nick = new_nick;
 	};
 
@@ -595,7 +599,7 @@ function make_handlers() {
 			return;
 		}
 
-		let target = irc.nicks[tokens[1]];
+		let target = irc.conn_from_nick(tokens[1]);
 
 		if (target === undefined) {
 			conn.numeric(401, `${tokens[1]} :No such nick`);
