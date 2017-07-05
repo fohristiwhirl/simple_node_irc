@@ -181,7 +181,7 @@ function make_irc_server() {
 			return;
 		}
 
-		reason = reason || "Quitting";
+		reason = reason || "";
 
 		let all_viewers = conn.viewer_list();
 
