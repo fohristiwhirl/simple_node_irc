@@ -182,7 +182,7 @@ function make_irc_server() {
 
 		// Figure out who has to be told about this...
 
-		let all_recipients = Object.create(null);	// Using this as a set, so things can only be in it once.
+		let all_recipients = Object.create(null);	// Using this as a map so that things can only be in it once: nick --> conn
 
 		all_recipients[old_nick] = conn;			// Always inform the changer.
 
@@ -195,7 +195,7 @@ function make_irc_server() {
 		let source = `${old_nick}!${conn.user}@${conn.address}`;
 
 		Object.keys(all_recipients).forEach((out_nick) => {
-			let out_conn = irc.nicks[out_nick];
+			let out_conn = all_recipients[out_nick];
 			out_conn.write(`:${source} NICK ${new_nick}` + "\r\n");
 		});
 
