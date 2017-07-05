@@ -13,7 +13,13 @@ words = """area book business case child company country day eye fact family gov
 lot man money month mother night number part people place point problem program question right room school
 state story student study system thing time water way week woman word work world year""".split()
 
-nick = "".join([random.choice(letters) for n in range(random.randint(5,8))])
+def generate_nick():
+	return "".join([random.choice(letters) for n in range(random.randint(5,8))])
+
+def generate_sentence():
+	return " ".join([random.choice(words) for n in range(random.randint(3,8))]) + random.choice([".", "?", "!"])
+
+nick = generate_nick()
 
 s = socket.socket()
 s.connect((serveraddr, serverport))
@@ -24,12 +30,15 @@ s.send("USER {}\n".format(nick).encode("ascii"))
 s.send("JOIN #test\n".encode("ascii"))
 
 last_msg_time = time.time();
+last_nick_time = time.time()
 
 while True:
 	if time.time() - last_msg_time > 5:
-		msg = " ".join([random.choice(words) for n in range(random.randint(3,8))]) + random.choice([".", "?", "!"]);
-		s.send("PRIVMSG #test :{}\n".format(msg).encode("ascii"))
+		s.send("PRIVMSG #test :{}\n".format(generate_sentence()).encode("ascii"))
 		last_msg_time = time.time();
+	if time.time() - last_nick_time > 30:
+		s.send("NICK {}\n".format(generate_nick()).encode("ascii"))
+		last_nick_time = time.time()
 	try:
 		data = s.recv(1024)
 		print(data.decode("ascii"))
