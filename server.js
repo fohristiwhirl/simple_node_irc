@@ -134,35 +134,42 @@ function tokenize_line_from_client(msg) {
 
 function make_channel(chan_name) {
 
-	let channel = {
-		connections: Object.create(null)		// map: nick --> conn
-	};
+	// Channels aren't notified if a user's nick changes,
+	// so the keys to the conn map have to be a uid.
 
-	channel.nick_list = () => {
-		return Object.keys(channel.connections);
+	let channel = {
+		connections: Object.create(null)		// map: uid --> conn
 	};
 
 	channel.conn_list = () => {
 		return values(channel.connections);
 	};
 
+	channel.nick_list = () => {
+		let ret = [];
+		channel.conn_list().forEach((conn) => {
+			ret.push(conn.nick);
+		});
+		return ret;
+	};
+
 	channel.remove_conn = (conn, silent) => {
-		if (channel.connections[conn.nick] !== undefined) {
+		if (channel.connections[conn.uid] !== undefined) {
 			if (silent === false || silent === undefined) {
-				channel.raw_send_all(`:${conn.id()} PART ${chan_name}`);
+				channel.raw_send_all(`:${conn.source()} PART ${chan_name}`);
 			}
-			delete channel.connections[conn.nick];
+			delete channel.connections[conn.uid];
 		}
 	};
 
 	channel.user_present = (conn) => {
-		return channel.connections[conn.nick] !== undefined;
+		return channel.connections[conn.uid] !== undefined;
 	};
 
 	channel.add_conn = (conn) => {
 		if (channel.user_present(conn) === false) {
-			channel.connections[conn.nick] = conn;
-			channel.raw_send_all(`:${conn.id()} JOIN ${chan_name}`);
+			channel.connections[conn.uid] = conn;
+			channel.raw_send_all(`:${conn.source()} JOIN ${chan_name}`);
 		}
 	};
 
@@ -178,7 +185,7 @@ function make_channel(chan_name) {
 			return;
 		}
 
-		let source = conn.id();
+		let source = conn.source();
 
 		channel.conn_list().forEach((out_conn) => {
 			if (conn !== out_conn) {
@@ -203,10 +210,19 @@ function make_channel(chan_name) {
 
 function make_irc_server() {
 
+	// The canonical list of who is connected and what channels exist.
+
 	let irc = {
 		nicks: Object.create(null),			// map: nick --> conn object
-		channels: Object.create(null)		// map: chan_name --> channel object
+		channels: Object.create(null),		// map: chan_name --> channel object
 	};
+
+	let next_id = 0;
+
+	irc.new_id = () => {
+		next_id += 1;
+		return next_id - 1;
+	}
 
 	irc.nick_in_use = (nick) => {
 		if (irc.nicks[nick] !== undefined) {
@@ -228,7 +244,7 @@ function make_irc_server() {
 		conn.part_all_channels(true);		// Do this AFTER getting the viewer list
 
 		all_viewers.forEach((out_conn) => {
-			out_conn.write(`:${conn.id()} QUIT :${reason}` + "\r\n");
+			out_conn.write(`:${conn.source()} QUIT :${reason}` + "\r\n");
 		});
 
 		delete irc.nicks[conn.nick];
@@ -265,7 +281,7 @@ function make_irc_server() {
 		let all_recipients = conn.viewer_list();
 
 		all_recipients.forEach((out_conn) => {
-			out_conn.write(`:${conn.id()} NICK ${new_nick}` + "\r\n");		// Note that conn hasn't been updated yet so conn.id() correctly gives the old source.
+			out_conn.write(`:${conn.source()} NICK ${new_nick}` + "\r\n");		// Note that conn hasn't been updated yet so conn.source() correctly gives the old source.
 		});
 
 		irc.nicks[new_nick] = conn;
@@ -316,10 +332,11 @@ function new_connection(irc, handlers, socket) {
 		user: undefined,
 		socket : socket,
 		address : socket.remoteAddress,		// good to cache this I think
+		uid: irc.new_id(),
 		channels : Object.create(null)		// map: chan_name --> channel object
 	};
 
-	conn.id = () => {
+	conn.source = () => {
 		return `${conn.nick}!${conn.user}@${conn.address}`;
 	};
 
@@ -343,7 +360,7 @@ function new_connection(irc, handlers, socket) {
 			});
 		});
 
-		return values(all_viewers);
+		return values(all_viewers);				// Note we return an array of conn objects, not the map above.
 	};
 
 	conn.write = (msg) => {
@@ -392,10 +409,6 @@ function new_connection(irc, handlers, socket) {
 
 	conn.part = (chan_name, silent) => {
 
-		if (chan_is_legal(chan_name) === false) {
-			return;
-		}
-
 		let channel = conn.channels[chan_name];
 
 		if (channel === undefined) {
@@ -430,7 +443,7 @@ function new_connection(irc, handlers, socket) {
 	conn.handle_line = (msg) => {
 
 		if (LOG_ALL && msg.trim() !== "") {
-			console.log("\n" + conn.id() + "\n   " + msg);
+			console.log("\n" + conn.source() + "\n   " + msg);
 		}
 
 		let tokens = tokenize_line_from_client(msg);
