@@ -100,7 +100,7 @@ function make_channel(chan_name) {
 
 	channel.nick_list = () => {
 		return Object.keys(channel.connections);
-	}
+	};
 
 	channel.conn_list = () => {
 		return values(channel.connections);
@@ -154,7 +154,7 @@ function make_channel(chan_name) {
 
 	channel.topic_reply = (conn) => {
 		conn.numeric(331, `${chan_name} :No topic is set`);
-	}
+	};
 
 	return channel;
 }
@@ -285,7 +285,7 @@ function new_connection(irc, handlers, socket) {
 
 	conn.channel_name_list = () => {
 		return Object.keys(conn.channels);
-	}
+	};
 
 	conn.channel_list = () => {
 		return values(conn.channels);
@@ -304,7 +304,7 @@ function new_connection(irc, handlers, socket) {
 		});
 
 		return values(all_viewers);
-	}
+	};
 
 	conn.write = (msg) => {
 		conn.socket.write(msg);
@@ -385,7 +385,7 @@ function new_connection(irc, handlers, socket) {
 
 		requester.numeric(311, `${conn.nick} ${conn.user} ${conn.address} * :${conn.user}`);
 		requester.numeric(318, `${conn.nick} :End of /WHOIS list`);
-	}
+	};
 
 	conn.handle_line = (msg) => {
 
@@ -418,7 +418,7 @@ function new_connection(irc, handlers, socket) {
 
 		let mid_colon_index = msg.indexOf(":");
 
-		let final_token = undefined;
+		let final_token;
 		let main_msg = msg;
 
 		if (mid_colon_index > -1) {
