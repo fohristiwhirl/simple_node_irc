@@ -459,6 +459,7 @@ function new_connection(irc, handlers, socket) {
 		// Ignore most commands if we haven't finished registration...
 
 		if (tokens[0] !== "NICK" && tokens[0] !== "USER" && (conn.nick === undefined || conn.user === undefined)) {
+			conn.numeric(451, ":You have not registered");
 			return;
 		}
 
