@@ -222,7 +222,7 @@ function make_irc_server() {
 	irc.new_id = () => {
 		next_id += 1;
 		return next_id - 1;
-	}
+	};
 
 	irc.nick_in_use = (nick) => {
 		if (irc.conns[nick] !== undefined) {
@@ -233,7 +233,7 @@ function make_irc_server() {
 
 	irc.conn_from_nick = (nick) => {
 		return irc.conns[nick];				// Can return undefined
-	}
+	};
 
 	irc.disconnect = (conn, reason) => {
 
