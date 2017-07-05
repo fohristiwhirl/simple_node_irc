@@ -81,6 +81,10 @@ function make_channel(chan_name) {
 		connections: []
 	};
 
+	channel.conn_list = () => {			// Allows other objects to be agnostic about our representation
+		return channel.connections;
+	};
+
 	channel.remove_conn = (conn) => {
 		channel.raw_send_all(`:${conn.id()} PART ${chan_name}`);
 
@@ -187,7 +191,7 @@ function make_irc_server() {
 		all_recipients[old_nick] = conn;			// Always inform the changer.
 
 		conn.channel_list().forEach((channel) => {
-			channel.connections.forEach((out_conn) => {
+			channel.conn_list().forEach((out_conn) => {
 				all_recipients[out_conn.nick] = out_conn;
 			});
 		});
@@ -261,14 +265,16 @@ function new_connection(irc, handlers, socket) {
 
 	conn.channel_list = () => {
 
+		// Return a list of actual channel objects that we are in.
+
 		let list = [];
 
-		Object.keys(conn.channels).forEach((key) => {
-			list.push(conn.channels[key]);
+		Object.keys(conn.channels).forEach((chan_name) => {
+			list.push(conn.channels[chan_name]);
 		});
 
 		return list;
-	}
+	};
 
 	conn.write = (msg) => {
 		conn.socket.write(msg);
