@@ -28,9 +28,11 @@
 
 const net = require("net");
 
+const SOFTWARE = "simple_node_irc";
 const SERVER = "127.0.0.1";
 const PORT = 6667;
-const SOFTWARE = "simple_node_irc";
+
+const LOG_ALL = true;
 
 const STARTUP_TIME = (new Date()).toTimeString();
 
@@ -385,7 +387,9 @@ function new_connection(irc, handlers, socket) {
 			return;
 		}
 
-		console.log(conn.id() + " ... " + msg);
+		if (LOG_ALL) {
+			console.log("\n" + conn.id() + "\n   " + msg);
+		}
 
 		let tokens = msg.split(" ");
 
