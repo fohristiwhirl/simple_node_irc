@@ -418,8 +418,8 @@ function new_connection(irc, handlers, socket) {
 
 		let mid_colon_index = msg.indexOf(":");
 
-		let final_token;
-		let main_msg = msg;
+		let final_token;										// May remain undefined
+		let main_msg = msg;										// Will become the part of the message before the colon (if there is one)
 
 		if (mid_colon_index > -1) {
 			final_token = msg.slice(mid_colon_index + 1);		// Possibly "" (empty string) or space-containing string
