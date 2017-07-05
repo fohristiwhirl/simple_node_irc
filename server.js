@@ -379,6 +379,12 @@ function new_connection(irc, handlers, socket) {
 
 	conn.handle_line = (msg) => {
 
+		msg = msg.trim();
+
+		if (msg === "") {
+			return;
+		}
+
 		console.log(conn.id() + " ... " + msg);
 
 		let tokens = msg.split(" ");
