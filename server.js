@@ -368,6 +368,15 @@ function new_connection(irc, handlers, socket) {
 		conn.numeric(3, `:This server started up at ${STARTUP_TIME}`);
 	};
 
+	conn.whois_reply = (requester) => {
+
+		// Reply to a WHOIS about this client.
+		// FIXME: there's some more stuff we're supposed to send...
+
+		requester.numeric(311, `${conn.nick} ${conn.user} ${conn.address} * :${conn.user}`);
+		requester.numeric(318, `${conn.nick} :End of /WHOIS list`);
+	}
+
 	conn.handle_line = (msg) => {
 
 		console.log(conn.id() + " ... " + msg);
@@ -535,10 +544,7 @@ function make_handlers() {
 			return;
 		}
 
-		// FIXME: there's some more stuff we're supposed to send...
-
-		conn.numeric(311, `${target.nick} ${target.user} ${target.address} * :${target.user}`);
-		conn.numeric(318, `${target.nick} :End of /WHOIS list`);
+		target.whois_reply(conn);
 	};
 
 	handlers.handle_PING = (irc, conn, msg, tokens) => {
