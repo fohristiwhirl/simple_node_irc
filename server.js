@@ -78,22 +78,39 @@ function sanitize_channel_name(str) {
 function make_channel(chan_name) {
 
 	let channel = {
-		connections: Object.create(null)	// nick --> conn object
+		connections: []
 	};
 
 	channel.remove_conn = (conn) => {
 		channel.raw_send_all(`:${conn.id()} PART ${chan_name}`);
-		delete channel.connections[conn.nick];
+
+		while (1) {
+			let index = channel.connections.indexOf(conn);
+			if (index !== -1) {
+				channel.connections.splice(index, 1);
+			} else {
+				break;
+			}
+		}
+	};
+
+	channel.user_present = (conn) => {
+		let index = channel.connections.indexOf(conn);
+		if (index !== -1) {
+			return true;
+		}
+		return false;
 	};
 
 	channel.add_conn = (conn) => {
-		channel.connections[conn.nick] = conn;
-		channel.raw_send_all(`:${conn.id()} JOIN ${chan_name}`);
+		if (channel.user_present(conn) === false) {
+			channel.connections.push(conn);
+			channel.raw_send_all(`:${conn.id()} JOIN ${chan_name}`);
+		}
 	};
 
 	channel.raw_send_all = (msg) => {
-		Object.keys(channel.connections).forEach((nick) => {
-			let conn = channel.connections[nick];
+		channel.connections.forEach((conn) => {
 			conn.write(msg + "\r\n");
 		});
 	};
@@ -110,16 +127,22 @@ function make_channel(chan_name) {
 
 		let source = conn.id();
 
-		Object.keys(channel.connections).forEach((nick) => {
-			if (nick !== conn.nick) {
-				let out_conn = channel.connections[nick];
+		channel.connections.forEach((out_conn) => {
+			if (conn !== out_conn) {
 				out_conn.write(`:${source} PRIVMSG ${chan_name} ${msg}` + "\r\n");
 			}
 		});
 	};
 
 	channel.name_reply = (conn) => {
-		conn.numeric(353, `= ${chan_name} :` + Object.keys(channel.connections).join(" "));
+
+		let all_nicks = [];
+
+		channel.connections.forEach((conn) => {
+			all_nicks.push(conn.nick);
+		});
+
+		conn.numeric(353, `= ${chan_name} :` + all_nicks.join(" "));
 		conn.numeric(366, `${chan_name} :End of /NAMES list`);
 	};
 
@@ -147,11 +170,38 @@ function make_irc_server() {
 	};
 
 	irc.remove_conn = (conn) => {
+		conn.part_all_channels();
 		delete irc.nicks[conn.nick];
 	};
 
-	irc.add_conn = (conn) => {
+	irc.add_conn = (conn) => {				// Should be called just once per client, as soon as conn.nick is set.
 		irc.nicks[conn.nick] = conn;
+	};
+
+	irc.change_nick = (conn, old_nick, new_nick) => {
+
+		irc.nicks[new_nick] = irc.nicks[old_nick];
+		delete irc.nicks[old_nick];
+
+		// Figure out who has to be told about this...
+
+		let all_recipients = Object.create(null);
+
+		Object.keys(conn.channels).forEach((chan_name) => {
+
+			let channel = conn.channels[chan_name];
+
+			channel.connections.forEach((conn) => {
+				all_recipients[conn.nick] = conn;
+			});
+		});
+
+		let source = `${old_nick}!${conn.user}@${conn.address}`;
+
+		Object.keys(all_recipients).forEach((out_nick) => {
+			let out_conn = irc.nicks[out_nick];
+			out_conn.write(`:${source} NICK ${new_nick}` + "\r\n");
+		});
 	};
 
 	irc.get_channel = (chan_name) => {
@@ -187,7 +237,7 @@ function new_connection(irc, handlers, socket) {
 	});
 
 	socket.on("close", () => {
-		conn.part_all_channels();
+		irc.remove_conn(conn);				// this will call conn.part_all_channels()
 	});
 
 	socket.on("error", () => {
@@ -201,11 +251,12 @@ function new_connection(irc, handlers, socket) {
 		nick: undefined,
 		user: undefined,
 		socket : socket,
+		address : socket.remoteAddress,		// good to cache this I think
 		channels : Object.create(null)		// chan_name --> channel object
 	};
 
 	conn.id = () => {
-		return `${conn.nick}!${conn.user}@${conn.socket.remoteAddress}`;
+		return `${conn.nick}!${conn.user}@${conn.address}`;
 	};
 
 	conn.write = (msg) => {
@@ -335,13 +386,17 @@ function make_handlers() {
 			return;
 		}
 
-		let had_nick_already = (conn.nick !== undefined);
+		let old_nick = conn.nick;
 
-		irc.remove_conn(conn);
 		conn.nick = tokens[1];
-		irc.add_conn(conn);
 
-		if (had_nick_already === false && conn.user !== undefined) {		// We just completed registration
+		if (old_nick !== undefined) {
+			irc.change_nick(conn, old_nick, conn.nick);
+		} else {
+			irc.add_conn(conn);		// This can be done even before conn.user is set.
+		}
+
+		if (old_nick === undefined && conn.user !== undefined) {			// We just completed registration
 			conn.welcome();
 		}
 	};
@@ -434,13 +489,13 @@ function make_handlers() {
 
 		// FIXME: there's some more stuff we're supposed to send...
 
-		conn.numeric(311, `${target.nick} ${target.user} ${target.socket.remoteAddress} * :${target.user}`);
+		conn.numeric(311, `${target.nick} ${target.user} ${target.address} * :${target.user}`);
 		conn.numeric(318, `${target.nick} :End of /WHOIS list`);
 	};
 
 	handlers.handle_PING = (irc, conn, msg, tokens) => {
-		conn.write(`PONG ${SERVER} ${conn.socket.remoteAddress}` + "\r\n");
-	}
+		conn.write(`PONG ${SERVER} ${conn.address}` + "\r\n");
+	};
 
 	return handlers;
 }
