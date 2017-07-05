@@ -51,9 +51,7 @@ function values(obj) {												// Like Object.values() I think.
 }
 
 function is_alphanumeric(str) {
-	let i;
-
-	for (i = 0; i < str.length; i += 1) {
+	for (let i = 0; i < str.length; i += 1) {
 		let code = str.charCodeAt(i);
 		if (((code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122)) === false) {
 			return false;
@@ -80,14 +78,56 @@ function chan_is_legal(str) {
 	return false;
 }
 
-function sanitize_channel_name(str) {
-
-	// Make sure channel name starts with "#" but do no other tests for legality.
-
+function sanitize_channel_name(str) {	// Make sure name starts with "#", but no legality checks
 	if (str.charAt(0) !== "#") {
 		str = "#" + str;
 	}
 	return str;
+}
+
+function tokenize_line_from_client(msg) {
+
+	// Some subtleties due to the IRC format.
+	// In particular, there can be a source at the start (starts with a colon).
+	// There can also be a space-containing final parameter (also starts with a colon).
+
+	msg = msg.trim();
+
+	if (msg === "") {
+		return [];
+	}
+
+	if (msg.charAt(0) === ":") {
+
+		// Get rid of this source token...
+
+		let first_space_index = msg.indexOf(" ");
+
+		if (first_space_index === -1) {
+			return [];
+		}
+
+		msg = msg.slice(first_space_index);
+	}
+
+	let mid_colon_index = msg.indexOf(":");
+
+	let final_token;										// May remain undefined
+	let main_msg = msg;										// Will become the part of the message before the colon (if there is one)
+
+	if (mid_colon_index > -1) {
+		final_token = msg.slice(mid_colon_index + 1);		// Possibly "" (empty string) or space-containing string
+		main_msg = msg.slice(0, mid_colon_index);
+	}
+
+	let tokens = main_msg.split(" ");
+	tokens = tokens.filter((item) => (item !== ""));		// Get rid of empty strings...
+
+	if (final_token !== undefined) {
+		tokens.push(final_token);							// This can be empty string, so add it after the above filter.
+	}
+
+	return tokens;
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -389,49 +429,11 @@ function new_connection(irc, handlers, socket) {
 
 	conn.handle_line = (msg) => {
 
-		// Some subtleties due to the IRC format.
-		// In particular, there can be a source at the start (starts with a colon).
-		// There can also be a space-containing final parameter (also starts with a colon).
-
-		msg = msg.trim();
-
-		if (msg === "") {
-			return;
-		}
-
-		if (LOG_ALL) {
+		if (LOG_ALL && msg.trim() !== "") {
 			console.log("\n" + conn.id() + "\n   " + msg);
 		}
 
-		if (msg.charAt(0) === ":") {
-
-			// Get rid of this source token...
-
-			let first_space_index = msg.indexOf(" ");
-
-			if (first_space_index === -1) {
-				return;
-			}
-
-			msg = msg.slice(first_space_index);
-		}
-
-		let mid_colon_index = msg.indexOf(":");
-
-		let final_token;										// May remain undefined
-		let main_msg = msg;										// Will become the part of the message before the colon (if there is one)
-
-		if (mid_colon_index > -1) {
-			final_token = msg.slice(mid_colon_index + 1);		// Possibly "" (empty string) or space-containing string
-			main_msg = msg.slice(0, mid_colon_index);
-		}
-
-		let tokens = main_msg.split(" ");
-		tokens = tokens.filter((item) => (item !== ""));		// Get rid of empty strings...
-
-		if (final_token !== undefined) {
-			tokens.push(final_token);							// This can be empty string, so add it after the above filter.
-		}
+		let tokens = tokenize_line_from_client(msg);
 
 		if (tokens.length === 0) {
 			return;
