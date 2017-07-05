@@ -4,7 +4,7 @@
 	A simple-minded IRC server written as an exercise in NodeJS.
 	See https://modern.ircdocs.horse for useful docs.
 
-	Some notes:
+	NOTES:
 
 	A message may or may not have a prefix. If it does,
 	the prefix must start with a colon.
@@ -17,6 +17,13 @@
 		:[server] [number] [recipient's nick] [other parameters]
 
 	Internally, we always store channel names with a leading "#".
+
+	Use Object.create(null) when using an object as a map to avoid
+	issues with prototypes.
+
+	In principle, having some base objects (i.e. for conns or
+	channels) to inherit from is possible, but it would require a
+	bit of work since the closures cause issues.
 */
 
 const net = require("net");
@@ -28,6 +35,18 @@ const SOFTWARE = "simple_node_irc";
 const STARTUP_TIME = (new Date()).toTimeString();
 
 // ---------------------------------------------------------------------------------------------------
+
+function values(obj) {												// Like Object.values() I think.
+	let list = [];
+
+	for (let key in obj) {
+		if (Object.prototype.hasOwnProperty.call(obj, key)) {		// Works even for prototype-less objects that don't have hasOwnProperty() available
+			list.push(obj[key]);
+		}
+	}
+
+	return list;
+}
 
 function is_alphanumeric(str) {
 	let i;
@@ -78,43 +97,37 @@ function sanitize_channel_name(str) {
 function make_channel(chan_name) {
 
 	let channel = {
-		connections: []
+		connections: Object.create(null)		// map: nick --> conn
 	};
 
-	channel.conn_list = () => {			// Allows other objects to be agnostic about our representation
-		return channel.connections;
+	channel.nick_list = () => {
+		return Object.keys(channel.connections);
+	}
+
+	channel.conn_list = () => {
+		return values(channel.connections);
 	};
 
 	channel.remove_conn = (conn) => {
-		channel.raw_send_all(`:${conn.id()} PART ${chan_name}`);
-
-		while (1) {
-			let index = channel.connections.indexOf(conn);
-			if (index !== -1) {
-				channel.connections.splice(index, 1);
-			} else {
-				break;
-			}
+		if (channel.connections[conn.nick] !== undefined) {
+			channel.raw_send_all(`:${conn.id()} PART ${chan_name}`);
+			delete channel.connections[conn.nick];
 		}
 	};
 
 	channel.user_present = (conn) => {
-		let index = channel.connections.indexOf(conn);
-		if (index !== -1) {
-			return true;
-		}
-		return false;
+		return channel.connections[conn.nick] !== undefined;
 	};
 
 	channel.add_conn = (conn) => {
 		if (channel.user_present(conn) === false) {
-			channel.connections.push(conn);
+			channel.connections[conn.nick] = conn;
 			channel.raw_send_all(`:${conn.id()} JOIN ${chan_name}`);
 		}
 	};
 
 	channel.raw_send_all = (msg) => {
-		channel.connections.forEach((conn) => {
+		channel.conn_list().forEach((conn) => {
 			conn.write(msg + "\r\n");
 		});
 	};
@@ -131,7 +144,7 @@ function make_channel(chan_name) {
 
 		let source = conn.id();
 
-		channel.connections.forEach((out_conn) => {
+		channel.conn_list().forEach((out_conn) => {
 			if (conn !== out_conn) {
 				out_conn.write(`:${source} PRIVMSG ${chan_name} ${msg}` + "\r\n");
 			}
@@ -139,16 +152,13 @@ function make_channel(chan_name) {
 	};
 
 	channel.name_reply = (conn) => {
-
-		let all_nicks = [];
-
-		channel.connections.forEach((conn) => {
-			all_nicks.push(conn.nick);
-		});
-
-		conn.numeric(353, `= ${chan_name} :` + all_nicks.join(" "));
+		conn.numeric(353, `= ${chan_name} :` + channel.nick_list().join(" "));
 		conn.numeric(366, `${chan_name} :End of /NAMES list`);
 	};
+
+	channel.topic_reply = (conn) => {
+		conn.numeric(331, `${chan_name} :No topic is set`);
+	}
 
 	return channel;
 }
@@ -157,20 +167,16 @@ function make_channel(chan_name) {
 
 function make_irc_server() {
 
-	// Use Object.create(null) when using an object as a map
-	// to avoid issued with prototypes.
-
 	let irc = {
-		nicks: Object.create(null),			// nick --> conn object
-		channels: Object.create(null)		// chan_name --> channel object
+		nicks: Object.create(null),			// map: nick --> conn object
+		channels: Object.create(null)		// map: chan_name --> channel object
 	};
 
 	irc.nick_in_use = (nick) => {
-		if (irc.nicks[nick]) {
+		if (irc.nicks[nick] !== undefined) {
 			return true;
-		} else {
-			return false;
 		}
+		return false;
 	};
 
 	irc.remove_conn = (conn) => {
@@ -178,29 +184,38 @@ function make_irc_server() {
 		delete irc.nicks[conn.nick];
 	};
 
-	irc.add_conn = (conn) => {				// Should be called just once per client, as soon as conn.nick is set.
+	irc.add_conn = (conn) => {						// Should be called once per client, as soon as conn.nick is set
 		irc.nicks[conn.nick] = conn;
 	};
 
-	irc.change_nick = (conn, old_nick, new_nick) => {
+	irc.set_first_nick = (conn, new_nick) => {
 
-		// Figure out who has to be told about this...
+		// The caller should already have checked legality.
+		// That way it can send the client an appropriate error.
 
-		let all_recipients = Object.create(null);	// Using this as a map so that things can only be in it once: nick --> conn
+		if (irc.nick_in_use(new_nick) || nick_is_legal(new_nick) === false) {
+			return;
+		}
 
-		all_recipients[old_nick] = conn;			// Always inform the changer.
+		conn.nick = new_nick;
+		irc.add_conn(conn);
+	};
 
-		conn.channel_list().forEach((channel) => {
-			channel.conn_list().forEach((out_conn) => {
-				all_recipients[out_conn.nick] = out_conn;
-			});
-		});
+	irc.change_nick = (conn, old_nick, new_nick) => {	// Assumes we've already checked legality of this.
 
-		let source = `${old_nick}!${conn.user}@${conn.address}`;
+		// The caller should already have checked legality.
+		// That way it can send the client an appropriate error.
 
-		Object.keys(all_recipients).forEach((out_nick) => {
-			let out_conn = all_recipients[out_nick];
-			out_conn.write(`:${source} NICK ${new_nick}` + "\r\n");
+		if (irc.nick_in_use(new_nick) || nick_is_legal(new_nick) === false) {
+			return;
+		}
+
+		// Tell everyone who can see the user about this...
+
+		let all_recipients = conn.viewer_list();
+
+		all_recipients.forEach((out_conn) => {
+			out_conn.write(`:${conn.id()} NICK ${new_nick}` + "\r\n");		// Note that conn hasn't been updated yet so conn.id() correctly gives the old source.
 		});
 
 		irc.nicks[new_nick] = conn;
@@ -208,11 +223,10 @@ function make_irc_server() {
 		conn.nick = new_nick;
 	};
 
-	irc.get_channel = (chan_name) => {
-		return irc.channels[chan_name];		// Can return undefined
-	};
-
 	irc.get_or_make_channel = (chan_name) => {
+		if (chan_is_legal(chan_name) === false) {
+			return undefined;
+		}
 		if (irc.channels[chan_name] === undefined) {
 			irc.channels[chan_name] = make_channel(chan_name);
 		}
@@ -225,9 +239,6 @@ function make_irc_server() {
 // ---------------------------------------------------------------------------------------------------
 
 function new_connection(irc, handlers, socket) {
-
-	// In principle, having some base object to inherit from is possible,
-	// but it would require a bit of work since the closure causes issues.
 
 	let conn;
 
@@ -249,38 +260,47 @@ function new_connection(irc, handlers, socket) {
 	});
 
 	// Setup the conn object...
-	// Use Object.create(null) when using an object as a map
 
 	conn = {
 		nick: undefined,
 		user: undefined,
 		socket : socket,
 		address : socket.remoteAddress,		// good to cache this I think
-		channels : Object.create(null)		// chan_name --> channel object
+		channels : Object.create(null)		// map: chan_name --> channel object
 	};
 
 	conn.id = () => {
 		return `${conn.nick}!${conn.user}@${conn.address}`;
 	};
 
+	conn.channel_name_list = () => {
+		return Object.keys(conn.channels);
+	}
+
 	conn.channel_list = () => {
+		return values(conn.channels);
+	};
 
-		// Return a list of actual channel objects that we are in.
+	conn.viewer_list = () => {					// Return a list of conns that can see this client (i.e. in channels).
 
-		let list = [];
+		let all_viewers = Object.create(null);	// Using this as a map so that things can only be in it once: nick --> conn
 
-		Object.keys(conn.channels).forEach((chan_name) => {
-			list.push(conn.channels[chan_name]);
+		all_viewers[conn.nick] = conn;			// Always include self.
+
+		conn.channel_list().forEach((channel) => {
+			channel.conn_list().forEach((other_conn) => {
+				all_viewers[other_conn.nick] = other_conn;
+			});
 		});
 
-		return list;
-	};
+		return values(all_viewers);
+	}
 
 	conn.write = (msg) => {
 		conn.socket.write(msg);
 	};
 
-	conn.numeric = (n, msg) => {			// Send a numeric reply to the client...
+	conn.numeric = (n, msg) => {				// Send a numeric reply to the client...
 
 		n = n.toString();
 
@@ -288,7 +308,7 @@ function new_connection(irc, handlers, socket) {
 			n = "0" + n;
 		}
 
-		let nick = conn.nick || "*";		// i.e. use "*" if nick is undefined
+		let nick = conn.nick || "*";			// i.e. use "*" if nick is undefined
 
 		conn.write(`:${SERVER} ${n} ${nick} ${msg}` + "\r\n");
 
@@ -309,10 +329,15 @@ function new_connection(irc, handlers, socket) {
 
 		let channel = irc.get_or_make_channel(chan_name);
 
+		if (channel === undefined) {						// Should be impossible
+			return;
+		}
+
 		conn.channels[chan_name] = channel;
 
 		channel.add_conn(conn);
 		channel.name_reply(conn);							// Send a RPL_NAMREPLY to the client (list of users in channel)
+		channel.topic_reply(conn);							// Send a RPL_NOTOPIC or RPL_TOPIC to the client
 	};
 
 	conn.part = (chan_name) => {
@@ -332,7 +357,7 @@ function new_connection(irc, handlers, socket) {
 	};
 
 	conn.part_all_channels = () => {
-		Object.keys(conn.channels).forEach((chan_name) => {
+		conn.channel_name_list().forEach((chan_name) => {
 			conn.part(chan_name);
 		});
 	};
@@ -407,10 +432,15 @@ function make_handlers() {
 
 		if (old_nick !== undefined) {
 			irc.change_nick(conn, old_nick, requested_nick);
-			conn.nick = requested_nick;
 		} else {
-			conn.nick = requested_nick;
-			irc.add_conn(conn);		// This can be done even before conn.user is set.
+			irc.set_first_nick(conn, requested_nick);
+		}
+
+		// The above call should have set conn.nick. If it somehow didn't...
+
+		if (conn.nick !== requested_nick) {
+			conn.numeric(400, ":Seemingly valid nick change failed (this should be impossible)");
+			return;
 		}
 
 		if (old_nick === undefined && conn.user !== undefined) {			// We just completed registration
