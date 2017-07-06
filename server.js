@@ -146,6 +146,10 @@ function log_input(source, msg) {
 	}
 }
 
+function warning(msg) {
+	console.log("\n" + "WARNING: " + msg);
+}
+
 // ---------------------------------------------------------------------------------------------------
 
 function make_channel(irc, chan_name) {
@@ -198,6 +202,7 @@ function make_channel(irc, chan_name) {
 
 	channel.add_conn = (conn) => {
 		if (channel.full()) {			// The caller should already have checked this, so it can send an error.
+			warning(`channel.add_conn() called but channel ${chan_name} is full`);
 			return;
 		}
 		if (channel.user_present(conn)) {
@@ -217,6 +222,11 @@ function make_channel(irc, chan_name) {
 	channel.normal_message = (conn, msg) => {
 
 		if (msg.length < 1) {
+			return;
+		}
+
+		if (channel.conns[conn.uid] === undefined) {
+			warning(`channel.normal_message() called but channel thinks ${conn.nick} is not in channel`);
 			return;
 		}
 
@@ -316,6 +326,7 @@ function make_irc_server() {
 		// That way it can send the client an appropriate error.
 
 		if (irc.nick_in_use(new_nick) || nick_is_legal(new_nick) === false) {
+			warning(`irc.set_first_nick() called with invalid or in-use nick ${new_nick}`);
 			return;
 		}
 
@@ -329,6 +340,7 @@ function make_irc_server() {
 		// That way it can send the client an appropriate error.
 
 		if (irc.nick_in_use(new_nick) || nick_is_legal(new_nick) === false) {
+			warning(`irc.change_nick() called with invalid or in-use nick ${new_nick}`);
 			return;
 		}
 
@@ -348,6 +360,7 @@ function make_irc_server() {
 	irc.get_or_make_channel = (chan_name) => {
 
 		if (chan_is_legal(chan_name) === false) {
+			warning(`irc.get_or_make_channel(${chan_name}) called with illegal channel name`);
 			return undefined;
 		}
 
@@ -473,6 +486,7 @@ function new_connection(irc, handlers, socket) {
 		let channel = irc.get_or_make_channel(chan_name);
 
 		if (channel === undefined) {						// Should be impossible
+			warning("conn.join() got an undefined channel from irc.get_or_make_channel($chan_name)");
 			return;
 		}
 
@@ -586,7 +600,7 @@ function make_handlers() {
 		// The above call should have set conn.nick. If it somehow didn't...
 
 		if (conn.nick !== requested_nick) {
-			conn.numeric(400, ":Seemingly valid nick change failed (this should be impossible)");
+			warning(`handle_NICK() seemed to succeed but conn.nick (${conn.nick}) !== requested_nick (${requested_nick})`)
 			return;
 		}
 
