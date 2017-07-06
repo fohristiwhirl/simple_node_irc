@@ -32,7 +32,8 @@ const SOFTWARE = "Simple Node IRC";
 const SERVER = "127.0.0.1";
 const PORT = 6667;
 
-const LOG_ALL = true;
+const LOG_INPUTS = true;
+const LOG_EVENTS = true;
 
 const STARTUP_TIME = (new Date()).toTimeString();
 
@@ -130,15 +131,28 @@ function tokenize_line_from_client(msg) {
 	return tokens;
 }
 
+function log_event(msg) {
+	if (LOG_EVENTS) {
+		console.log("-- " + msg);
+	}
+}
+
+function log_input(source, msg) {
+	if (LOG_INPUTS && msg.trim() !== "") {
+		console.log("\n" + source + "\n   " + msg);
+	}
+}
+
 // ---------------------------------------------------------------------------------------------------
 
-function make_channel(chan_name) {
+function make_channel(irc, chan_name) {
 
 	// Channels aren't notified if a user's nick changes,
 	// so the keys to the conn map have to be a uid.
 
 	let channel = {
-		conns: Object.create(null)		// map: uid --> conn
+		conns: Object.create(null),		// map: uid --> conn
+		user_count: 0
 	};
 
 	channel.conn_list = () => {
@@ -154,11 +168,20 @@ function make_channel(chan_name) {
 	};
 
 	channel.remove_conn = (conn, silent) => {
-		if (channel.conns[conn.uid] !== undefined) {
-			if (silent === false || silent === undefined) {
-				channel.raw_send_all(`:${conn.source()} PART ${chan_name}`);
-			}
-			delete channel.conns[conn.uid];
+
+		if (channel.conns[conn.uid] === undefined) {
+			return;
+		}
+
+		if (silent === false || silent === undefined) {
+			channel.raw_send_all(`:${conn.source()} PART ${chan_name}`);
+		}
+
+		delete channel.conns[conn.uid];
+		channel.user_count -= 1;
+
+		if (channel.user_count === 0) {
+			irc.close_channel(chan_name);
 		}
 	};
 
@@ -167,10 +190,12 @@ function make_channel(chan_name) {
 	};
 
 	channel.add_conn = (conn) => {
-		if (channel.user_present(conn) === false) {
-			channel.conns[conn.uid] = conn;
-			channel.raw_send_all(`:${conn.source()} JOIN ${chan_name}`);
+		if (channel.user_present(conn)) {
+			return;
 		}
+		channel.conns[conn.uid] = conn;
+		channel.user_count += 1;
+		channel.raw_send_all(`:${conn.source()} JOIN ${chan_name}`);
 	};
 
 	channel.raw_send_all = (msg) => {
@@ -220,8 +245,7 @@ function make_irc_server() {
 	let next_id = 0;
 
 	irc.new_id = () => {
-		next_id += 1;
-		return next_id - 1;
+		return next_id++;
 	};
 
 	irc.nick_in_use = (nick) => {
@@ -241,6 +265,8 @@ function make_irc_server() {
 			return;
 		}
 
+		log_event(`User ${conn.nick} is disconnecting`);
+
 		reason = reason || "";
 
 		let all_viewers = conn.viewer_list();
@@ -254,7 +280,7 @@ function make_irc_server() {
 		delete irc.conns[conn.nick];
 	};
 
-	irc.add_conn = (conn) => {				// Should be called once per client, as soon as conn.nick is set
+	irc.add_conn = (conn) => {				// Should be called once per client, exactly when conn.nick is set
 		irc.conns[conn.nick] = conn;
 	};
 
@@ -294,14 +320,23 @@ function make_irc_server() {
 	};
 
 	irc.get_or_make_channel = (chan_name) => {
+
 		if (chan_is_legal(chan_name) === false) {
 			return undefined;
 		}
+
 		if (irc.channels[chan_name] === undefined) {
-			irc.channels[chan_name] = make_channel(chan_name);
+			irc.channels[chan_name] = make_channel(irc, chan_name);
+			log_event(`Creating channel ${chan_name}`);
 		}
+
 		return irc.channels[chan_name];
 	};
+
+	irc.close_channel = (chan_name) => {
+		delete irc.channels[chan_name];
+		log_event(`Closing channel ${chan_name}`);
+	}
 
 	return irc;
 }
@@ -446,9 +481,7 @@ function new_connection(irc, handlers, socket) {
 
 	conn.handle_line = (msg) => {
 
-		if (LOG_ALL && msg.trim() !== "") {
-			console.log("\n" + conn.source() + "\n   " + msg);
-		}
+		log_input(conn.source(), msg);
 
 		let tokens = tokenize_line_from_client(msg);
 
