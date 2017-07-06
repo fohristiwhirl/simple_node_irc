@@ -152,7 +152,7 @@ function warning(msg) {
 
 // ---------------------------------------------------------------------------------------------------
 
-function make_channel(irc, chan_name) {
+function make_channel(chan_name, close_function) {
 
 	// Channels aren't notified if a user's nick changes,
 	// so the keys to the conn map have to be a uid.
@@ -160,6 +160,8 @@ function make_channel(irc, chan_name) {
 	let channel = {
 		conns: Object.create(null),		// map: uid --> conn
 		user_count: 0,
+		name: chan_name,
+		close_function: close_function,
 	};
 
 	channel.conn_list = () => {
@@ -181,14 +183,14 @@ function make_channel(irc, chan_name) {
 		}
 
 		if (silent === false || silent === undefined) {
-			channel.raw_send_all(`:${conn.source()} PART ${chan_name}`);
+			channel.raw_send_all(`:${conn.source()} PART ${channel.name}`);
 		}
 
 		delete channel.conns[conn.uid];
 		channel.user_count -= 1;
 
 		if (channel.user_count === 0) {
-			irc.close_channel(chan_name);
+			channel.close_function();
 		}
 	};
 
@@ -202,7 +204,7 @@ function make_channel(irc, chan_name) {
 
 	channel.add_conn = (conn) => {
 		if (channel.full()) {			// The caller should already have checked this, so it can send an error.
-			warning(`channel.add_conn() called but channel ${chan_name} is full`);
+			warning(`channel.add_conn() called but channel ${channel.name} is full`);
 			return;
 		}
 		if (channel.user_present(conn)) {
@@ -210,7 +212,7 @@ function make_channel(irc, chan_name) {
 		}
 		channel.conns[conn.uid] = conn;
 		channel.user_count += 1;
-		channel.raw_send_all(`:${conn.source()} JOIN ${chan_name}`);
+		channel.raw_send_all(`:${conn.source()} JOIN ${channel.name}`);
 	};
 
 	channel.raw_send_all = (msg) => {
@@ -234,18 +236,18 @@ function make_channel(irc, chan_name) {
 
 		channel.conn_list().forEach((out_conn) => {
 			if (conn !== out_conn) {
-				out_conn.write(`:${source} PRIVMSG ${chan_name} :${msg}` + "\r\n");
+				out_conn.write(`:${source} PRIVMSG ${channel.name} :${msg}` + "\r\n");
 			}
 		});
 	};
 
 	channel.name_reply = (conn) => {
-		conn.numeric(353, `= ${chan_name} :` + channel.nick_list().join(" "));
-		conn.numeric(366, `${chan_name} :End of /NAMES list`);
+		conn.numeric(353, `= ${channel.name} :` + channel.nick_list().join(" "));
+		conn.numeric(366, `${channel.name} :End of /NAMES list`);
 	};
 
 	channel.topic_reply = (conn) => {
-		conn.numeric(331, `${chan_name} :No topic is set`);
+		conn.numeric(331, `${channel.name} :No topic is set`);
 	};
 
 	return channel;
@@ -261,12 +263,11 @@ function make_irc_server() {
 		conns: Object.create(null),			// map: nick --> conn object
 		channels: Object.create(null),		// map: chan_name --> channel object
 		user_count: 0,						// this is all users, registered OR NOT
+		next_id: 0,
 	};
 
-	let next_id = 0;
-
 	irc.new_id = () => {
-		return next_id++;
+		return irc.next_id++;
 	};
 
 	irc.full = () => {
@@ -368,7 +369,7 @@ function make_irc_server() {
 		}
 
 		if (irc.channels[chan_name] === undefined) {
-			irc.channels[chan_name] = make_channel(irc, chan_name);
+			irc.channels[chan_name] = make_channel(chan_name, () => irc.close_channel(chan_name));
 			log_event(`Creating channel ${chan_name}`);
 		}
 
@@ -385,11 +386,13 @@ function make_irc_server() {
 
 // ---------------------------------------------------------------------------------------------------
 
-function new_connection(irc, handlers, socket) {
+function new_connection(irc_object, handlers_object, socket) {
 
 	let conn = {
 		nick: undefined,
 		user: undefined,
+		irc: irc_object,					// a reference to the irc object (i.e. main state holder)
+		handlers: handlers_object,
 		socket : socket,
 		address : socket.remoteAddress,		// good to cache address and port I think
 		port: socket.remotePort,
@@ -397,15 +400,15 @@ function new_connection(irc, handlers, socket) {
 		channels : Object.create(null),		// map: chan_name --> channel object
 	};
 
-	if (irc.full()) {
+	if (conn.irc.full()) {
 		log_event(`New connection REFUSED: ${conn.address}:${conn.port} (server full)`);
 		socket.write(`:${SERVER} :Server is full` + "\r\n");
 		socket.destroy();
 		return;
 	}
 
-	conn.uid = irc.new_id();
-	irc.note_new_connection();				// This just increments a counter
+	conn.uid = conn.irc.new_id();
+	conn.irc.note_new_connection();			// This just increments a counter
 
 	log_event(`New connection: ${conn.address}:${conn.port}`);
 
@@ -419,7 +422,7 @@ function new_connection(irc, handlers, socket) {
 	});
 
 	socket.on("close", () => {
-		irc.disconnect(conn, undefined);	// this will call conn.part_all_channels()
+		conn.irc.disconnect(conn, undefined);	// this will call conn.part_all_channels()
 	});
 
 	socket.on("error", () => {
@@ -486,7 +489,7 @@ function new_connection(irc, handlers, socket) {
 			return;
 		}
 
-		let channel = irc.get_or_make_channel(chan_name);
+		let channel = conn.irc.get_or_make_channel(chan_name);
 
 		if (channel === undefined) {						// Should be impossible
 			warning("conn.join() got an undefined channel from irc.get_or_make_channel($chan_name)");
@@ -558,10 +561,10 @@ function new_connection(irc, handlers, socket) {
 
 		// Dynamically call one of the "handle_XYZ" functions...
 
-		let handler = handlers["handle_" + tokens[0]];
+		let handler = conn.handlers["handle_" + tokens[0]];
 
 		if (typeof(handler) === "function") {
-			handler(irc, conn, tokens);
+			handler(conn.irc, conn, tokens);
 		}
 	};
 }
@@ -678,7 +681,8 @@ function make_handlers() {
 
 		let channel = conn.channels[chan_name];
 
-		if (channel === undefined) {
+		if (channel === undefined) {							// User isn't in the channel
+			conn.numeric(404, ":Cannot send to channel");
 			return;
 		}
 
