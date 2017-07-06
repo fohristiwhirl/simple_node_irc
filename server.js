@@ -260,10 +260,10 @@ function make_irc_server() {
 	// The canonical list of who is connected and what channels exist.
 
 	let irc = {
-		conns: Object.create(null),			// map: nick --> conn object
-		channels: Object.create(null),		// map: chan_name --> channel object
-		user_count: 0,						// this is all users, registered OR NOT
-		next_id: 0,
+		conns:		Object.create(null),	// map: nick --> conn object
+		channels:	Object.create(null),	// map: chan_name --> channel object
+		user_count:	0,						// this is all users, registered OR NOT
+		next_id:	0,
 	};
 
 	irc.new_id = () => {
@@ -389,15 +389,15 @@ function make_irc_server() {
 function new_connection(irc_object, handlers_object, socket) {
 
 	let conn = {
-		nick: undefined,
-		user: undefined,
-		irc: irc_object,					// a reference to the irc object (i.e. main state holder)
-		handlers: handlers_object,
-		socket : socket,
-		address : socket.remoteAddress,		// good to cache address and port I think
-		port: socket.remotePort,
-		uid: -1,
-		channels : Object.create(null),		// map: chan_name --> channel object
+		nick:		undefined,
+		user:		undefined,
+		irc:		irc_object,					// a reference to the irc object (i.e. main state holder)
+		handlers:	handlers_object,			// handlers for commands e.g. JOIN, NICK etc
+		socket:		socket,
+		address:	socket.remoteAddress,		// good to cache address and port I think
+		port:		socket.remotePort,
+		uid:		-1,
+		channels:	Object.create(null),		// map: chan_name --> channel object
 	};
 
 	if (conn.irc.full()) {
