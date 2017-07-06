@@ -32,6 +32,8 @@ const SOFTWARE = "Simple Node IRC";
 const SERVER = "127.0.0.1";
 const PORT = 6667;
 
+const MAX_USERS_PER_CHANNEL = 50;
+
 const LOG_INPUTS = true;
 const LOG_EVENTS = true;
 
@@ -133,7 +135,7 @@ function tokenize_line_from_client(msg) {
 
 function log_event(msg) {
 	if (LOG_EVENTS) {
-		console.log("-- " + msg);
+		console.log("\n-- " + msg);
 	}
 }
 
@@ -185,11 +187,18 @@ function make_channel(irc, chan_name) {
 		}
 	};
 
+	channel.full = () => {
+		return channel.user_count >= MAX_USERS_PER_CHANNEL;
+	}
+
 	channel.user_present = (conn) => {
 		return channel.conns[conn.uid] !== undefined;
 	};
 
 	channel.add_conn = (conn) => {
+		if (channel.full()) {			// The caller should already have checked this, so it can send an error.
+			return;
+		}
 		if (channel.user_present(conn)) {
 			return;
 		}
@@ -345,6 +354,8 @@ function make_irc_server() {
 
 function new_connection(irc, handlers, socket) {
 
+	log_event(`New connection: ${socket.remoteAddress}:${socket.remotePort}`);
+
 	let conn;
 
 	// Setup socket actions...
@@ -439,6 +450,11 @@ function new_connection(irc, handlers, socket) {
 			return;
 		}
 
+		if (channel.full()) {
+			conn.numeric(471, `${chan_name} :Channel is full`);
+			return;
+		}
+
 		conn.channels[chan_name] = channel;
 
 		channel.add_conn(conn);
@@ -468,6 +484,7 @@ function new_connection(irc, handlers, socket) {
 		conn.numeric(1, `:Welcome to the server!`);
 		conn.numeric(2, `:Your host is ${SERVER}, running ${SOFTWARE}`);
 		conn.numeric(3, `:This server started up at ${STARTUP_TIME}`);
+		log_event(`${conn.nick} finished registering`);
 	};
 
 	conn.whois_reply = (requester) => {
