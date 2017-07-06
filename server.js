@@ -158,10 +158,10 @@ function make_channel(chan_name, close_function) {
 	// so the keys to the conn map have to be a uid.
 
 	let channel = {
-		conns: Object.create(null),		// map: uid --> conn
-		user_count: 0,
-		name: chan_name,
-		close_function: close_function,
+		conns:			Object.create(null),		// map: uid --> conn
+		user_count:		0,
+		name:			chan_name,
+		close_function:	close_function,
 	};
 
 	channel.conn_list = () => {
