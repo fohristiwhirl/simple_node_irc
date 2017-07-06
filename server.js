@@ -23,7 +23,8 @@
 
 	In principle, having some base objects (i.e. for conns or
 	channels) to inherit from is possible, but it would require a
-	bit of work since the closures cause issues.
+	bit of refactoring since the closures need to be eliminated.
+	Also, there probably aren't worthwhile performance benefits.
 */
 
 const net = require("net");
@@ -726,6 +727,8 @@ function main() {
 	});
 
 	server.listen(PORT, SERVER);
+
+	log_event(`Server startup at ${STARTUP_TIME}`);
 }
 
 // ---------------------------------------------------------------------------------------------------
