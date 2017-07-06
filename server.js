@@ -287,6 +287,7 @@ function make_irc_server() {
 		// But apart from fixing the count, we don't need to do anything else for them...
 
 		if (conn === undefined || irc.conns[conn.nick] === undefined) {
+			log_event(`Unregistered user ${conn.address}:${conn.port} disconnected`);
 			return;
 		}
 
@@ -370,25 +371,27 @@ function make_irc_server() {
 
 function new_connection(irc, handlers, socket) {
 
+	let conn = {
+		nick: undefined,
+		user: undefined,
+		socket : socket,
+		address : socket.remoteAddress,		// good to cache address and port I think
+		port: socket.remotePort,
+		uid: -1,
+		channels : Object.create(null),		// map: chan_name --> channel object
+	};
+
 	if (irc.full()) {
-		log_event(`New connection REFUSED: ${socket.remoteAddress}:${socket.remotePort} (server full)`);
+		log_event(`New connection REFUSED: ${conn.address}:${conn.port} (server full)`);
 		socket.write(`:${SERVER} :Server is full` + "\r\n");
 		socket.destroy();
 		return;
 	}
 
-	let conn = {
-		nick: undefined,
-		user: undefined,
-		socket : socket,
-		address : socket.remoteAddress,		// good to cache this I think
-		uid: irc.new_id(),
-		channels : Object.create(null),		// map: chan_name --> channel object
-	};
-
+	conn.uid = irc.new_id();
 	irc.note_new_connection();				// This just increments a counter
 
-	log_event(`New connection: ${socket.remoteAddress}:${socket.remotePort}`);
+	log_event(`New connection: ${conn.address}:${conn.port}`);
 
 	// Setup socket actions...
 
