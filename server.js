@@ -294,12 +294,15 @@ function make_irc_server() {
 
 		irc.user_count -= 1;
 
-		// But apart from fixing the count, we don't need to do anything else for them...
+		// But if they are not in our map of users, we can just return...
 
 		if (conn === undefined || irc.conns[conn.nick] === undefined) {
 			log_event(`Unregistered user ${conn.address}:${conn.port} disconnected`);
 			return;
 		}
+
+		// Note that clients that have set their NICK but did not set their USER will
+		// be allowed past this phase. Such nicks do need to be removed from the map.
 
 		log_event(`User ${conn.nick} is disconnecting`);
 
