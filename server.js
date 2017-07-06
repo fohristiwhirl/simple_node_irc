@@ -140,9 +140,9 @@ function log_event(msg) {
 	}
 }
 
-function log_input(source, msg) {
+function log_input(conn, msg) {
 	if (LOG_INPUTS && msg.trim() !== "") {
-		console.log("\n" + source + "\n   " + msg);
+		console.log("\n" + conn.source() + `  (${conn.port})` + "\n   " + msg);
 	}
 }
 
@@ -538,7 +538,7 @@ function new_connection(irc, handlers, socket) {
 
 	conn.handle_line = (msg) => {
 
-		log_input(conn.source(), msg);
+		log_input(conn, msg);
 
 		let tokens = tokenize_line_from_client(msg);
 
@@ -600,7 +600,7 @@ function make_handlers() {
 		// The above call should have set conn.nick. If it somehow didn't...
 
 		if (conn.nick !== requested_nick) {
-			warning(`handle_NICK() seemed to succeed but conn.nick (${conn.nick}) !== requested_nick (${requested_nick})`)
+			warning(`handle_NICK() seemed to succeed but conn.nick (${conn.nick}) !== requested_nick (${requested_nick})`);
 			return;
 		}
 
