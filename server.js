@@ -142,116 +142,6 @@ function warning(msg) {
 
 // ---------------------------------------------------------------------------------------------------
 
-function make_channel(chan_name, close_function) {
-
-	// Channels aren't notified if a user's nick changes,
-	// so the keys to the conn map have to be a uid.
-
-	let channel = {
-		conns:			Object.create(null),		// map: uid --> conn
-		user_count:		0,
-		name:			chan_name,
-		close_function:	close_function,
-	};
-
-	channel.conn_list = () => {
-		return Object.keys(channel.conns).map((uid) => channel.conns[uid]);
-	};
-
-	channel.nick_list = () => {
-		return Object.keys(channel.conns).map((uid) => channel.conns[uid].nick);
-	};
-
-	channel.full = () => {
-		return channel.user_count >= MAX_USERS_PER_CHANNEL;
-	};
-
-	channel.user_present = (conn) => {
-		return channel.conns[conn.uid] !== undefined;
-	};
-
-	channel.add_conn = (conn) => {
-
-		// Returns true or false: whether the connection was allowed...
-		// The calling conn then needs to update its own record of what channels it is in, accordingly.
-
-		if (channel.user_present(conn)) {
-			return false;
-		}
-
-		if (channel.full()) {
-			conn.numeric(471, `${chan_name} :Channel is full`);
-			return false;
-		}
-
-		channel.conns[conn.uid] = conn;
-		channel.user_count += 1;
-
-		channel.raw_send_all(`:${conn.source()} JOIN ${channel.name}`);
-
-		return true;
-	};
-
-	channel.remove_conn = (conn, silent) => {
-
-		if (channel.user_present(conn) === false) {
-			return;
-		}
-
-		if (silent === false || silent === undefined) {
-			channel.raw_send_all(`:${conn.source()} PART ${channel.name}`);
-		}
-
-		delete channel.conns[conn.uid];
-		channel.user_count -= 1;
-
-		if (channel.user_count === 0) {
-			channel.close_function();
-		}
-	};
-
-	channel.raw_send_all = (msg) => {
-		channel.conn_list().forEach((conn) => {
-			conn.write(msg + "\r\n");
-		});
-	};
-
-	channel.normal_message = (conn, msg) => {
-
-		msg = msg.trim();
-
-		if (msg.length < 1) {
-			return;
-		}
-
-		if (channel.conns[conn.uid] === undefined) {			// User is not in the channel
-			conn.numeric(404, ":Cannot send to channel");
-			return;
-		}
-
-		let source = conn.source();
-
-		channel.conn_list().forEach((out_conn) => {
-			if (conn !== out_conn) {
-				out_conn.write(`:${source} PRIVMSG ${channel.name} :${msg}` + "\r\n");
-			}
-		});
-	};
-
-	channel.name_reply = (conn) => {
-		conn.numeric(353, `= ${channel.name} :` + channel.nick_list().join(" "));
-		conn.numeric(366, `${channel.name} :End of /NAMES list`);
-	};
-
-	channel.topic_reply = (conn) => {
-		conn.numeric(331, `${channel.name} :No topic is set`);
-	};
-
-	return channel;
-}
-
-// ---------------------------------------------------------------------------------------------------
-
 function make_irc_server() {
 
 	// The canonical list of who is connected and what channels exist.
@@ -391,6 +281,116 @@ function make_irc_server() {
 	};
 
 	return irc;
+}
+
+// ---------------------------------------------------------------------------------------------------
+
+function make_channel(chan_name, close_function) {
+
+	// Channels aren't notified if a user's nick changes,
+	// so the keys to the conn map have to be a uid.
+
+	let channel = {
+		conns:			Object.create(null),		// map: uid --> conn
+		user_count:		0,
+		name:			chan_name,
+		close_function:	close_function,
+	};
+
+	channel.conn_list = () => {
+		return Object.keys(channel.conns).map((uid) => channel.conns[uid]);
+	};
+
+	channel.nick_list = () => {
+		return Object.keys(channel.conns).map((uid) => channel.conns[uid].nick);
+	};
+
+	channel.full = () => {
+		return channel.user_count >= MAX_USERS_PER_CHANNEL;
+	};
+
+	channel.user_present = (conn) => {
+		return channel.conns[conn.uid] !== undefined;
+	};
+
+	channel.add_conn = (conn) => {
+
+		// Returns true or false: whether the connection was allowed...
+		// The calling conn then needs to update its own record of what channels it is in, accordingly.
+
+		if (channel.user_present(conn)) {
+			return false;
+		}
+
+		if (channel.full()) {
+			conn.numeric(471, `${chan_name} :Channel is full`);
+			return false;
+		}
+
+		channel.conns[conn.uid] = conn;
+		channel.user_count += 1;
+
+		channel.raw_send_all(`:${conn.source()} JOIN ${channel.name}`);
+
+		return true;
+	};
+
+	channel.remove_conn = (conn, silent) => {
+
+		if (channel.user_present(conn) === false) {
+			return;
+		}
+
+		if (silent === false || silent === undefined) {
+			channel.raw_send_all(`:${conn.source()} PART ${channel.name}`);
+		}
+
+		delete channel.conns[conn.uid];
+		channel.user_count -= 1;
+
+		if (channel.user_count === 0) {
+			channel.close_function();
+		}
+	};
+
+	channel.raw_send_all = (msg) => {
+		channel.conn_list().forEach((conn) => {
+			conn.write(msg + "\r\n");
+		});
+	};
+
+	channel.normal_message = (conn, msg) => {
+
+		msg = msg.trim();
+
+		if (msg.length < 1) {
+			return;
+		}
+
+		if (channel.conns[conn.uid] === undefined) {			// User is not in the channel
+			conn.numeric(404, ":Cannot send to channel");
+			return;
+		}
+
+		let source = conn.source();
+
+		channel.conn_list().forEach((out_conn) => {
+			if (conn !== out_conn) {
+				out_conn.write(`:${source} PRIVMSG ${channel.name} :${msg}` + "\r\n");
+			}
+		});
+	};
+
+	channel.name_reply = (conn) => {
+		conn.numeric(353, `= ${channel.name} :` + channel.nick_list().join(" "));
+		conn.numeric(366, `${channel.name} :End of /NAMES list`);
+	};
+
+	channel.topic_reply = (conn) => {
+		conn.numeric(331, `${channel.name} :No topic is set`);
+	};
+
+	return channel;
 }
 
 // ---------------------------------------------------------------------------------------------------
