@@ -500,7 +500,9 @@ function new_connection(irc_object, handlers_object, socket) {
 
 		chan_name = sanitize_channel_name(chan_name);
 
-		if (conn.channels[chan_name] !== undefined) {		// We're already in this channel
+		// Channel names can contain uppercase chars, but we store them as lowercase in the conn object.
+
+		if (conn.channels[chan_name.toLowerCase()] !== undefined) {		// We're already in this channel
 			return;
 		}
 
@@ -522,7 +524,7 @@ function new_connection(irc_object, handlers_object, socket) {
 			return;
 		}
 
-		conn.channels[chan_name] = channel;
+		conn.channels[chan_name.toLowerCase()] = channel;
 
 		channel.name_reply(conn);							// Send a RPL_NAMREPLY to the client (list of users in channel)
 		channel.topic_reply(conn);							// Send a RPL_NOTOPIC or RPL_TOPIC to the client
@@ -531,14 +533,14 @@ function new_connection(irc_object, handlers_object, socket) {
 	conn.part = (chan_name, silent) => {
 
 		chan_name = sanitize_channel_name(chan_name);		// No need to check for legality of channel name
-		let channel = conn.channels[chan_name];
+		let channel = conn.irc.get_channel[chan_name];
 
 		if (channel === undefined) {
 			return;
 		}
 
 		channel.remove_conn(conn, silent);
-		delete conn.channels[chan_name];
+		delete conn.channels[chan_name.toLowerCase()];
 	};
 
 	conn.part_all_channels = (silent) => {
