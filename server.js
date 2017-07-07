@@ -27,6 +27,7 @@
 	Also, there probably aren't worthwhile performance benefits.
 */
 
+const assert = require("assert");
 const net = require("net");
 
 const SOFTWARE = "Simple Node IRC";
@@ -211,27 +212,6 @@ function make_irc_server() {
 		irc.conns[conn.nick] = conn;
 	};
 
-	irc.set_first_nick = (conn, new_nick) => {
-
-		if (conn.nick !== undefined) {
-			warning(`irc.set_first_nick() called but conn.nick was already ${conn.nick}`);
-			return;
-		}
-
-		if (irc.nick_in_use(new_nick)) {
-			conn.numeric(433, ":Nickname is already in use");
-			return;
-		}
-
-		if (nick_is_legal(new_nick) === false) {
-			conn.numeric(432, ":Erroneus nickname");
-			return;
-		}
-
-		conn.nick = new_nick;
-		irc.add_conn(conn);
-	};
-
 	irc.change_nick = (conn, old_nick, new_nick) => {
 
 		if (irc.nick_in_use(new_nick)) {
@@ -246,15 +226,23 @@ function make_irc_server() {
 
 		// Tell everyone who can see the user about this...
 
-		let all_recipients = conn.viewer_list();
+		let all_recipients = (conn.nick === undefined) ? [] : conn.viewer_list();
 
 		all_recipients.forEach((out_conn) => {
 			out_conn.write(`:${conn.source()} NICK ${new_nick}` + "\r\n");		// Note that conn hasn't been updated yet so conn.source() correctly gives the old source.
 		});
 
-		irc.conns[new_nick] = conn;
-		delete irc.conns[old_nick];
+		// We set the nick in the conn object ourselves... (slightly icky)...
+
 		conn.nick = new_nick;
+
+		irc.conns[new_nick] = conn;
+
+		if (old_nick === undefined) {
+			irc.add_conn(conn);				// irc.add_conn() should be called the moment a conn gets its first nick, regardless of whether registration is complete.
+		} else {
+			delete irc.conns[old_nick];
+		}
 	};
 
 	irc.get_channel = (chan_name) => {
@@ -603,11 +591,7 @@ function make_handlers() {
 		let requested_nick = tokens[1];
 		let old_nick = conn.nick;
 
-		if (old_nick !== undefined) {
-			irc.change_nick(conn, old_nick, requested_nick);
-		} else {
-			irc.set_first_nick(conn, requested_nick);
-		}
+		irc.change_nick(conn, old_nick, requested_nick);
 
 		// If all went well, conn.nick was just set to requested_nick, otherwise, bail out...
 
