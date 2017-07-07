@@ -137,10 +137,6 @@ function log_input(conn, msg) {
 	}
 }
 
-function warning(msg) {
-	console.log("\n" + "WARNING: " + msg);
-}
-
 // ---------------------------------------------------------------------------------------------------
 
 function make_irc_server() {
