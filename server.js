@@ -395,6 +395,7 @@ function new_connection(irc_object, handlers_object, socket) {
 		port:		socket.remotePort,
 		uid:		-1,
 		channels:	Object.create(null),		// map: chan_name --> channel object
+		last_act:	Date.now(),
 	};
 
 	if (conn.irc.full()) {
@@ -405,7 +406,7 @@ function new_connection(irc_object, handlers_object, socket) {
 	}
 
 	conn.uid = conn.irc.new_id();
-	conn.irc.note_new_connection();			// This just increments a counter
+	conn.irc.note_new_connection();				// This just increments a counter
 
 	log_event(`New connection: ${conn.address}:${conn.port}`);
 
@@ -543,13 +544,17 @@ function new_connection(irc_object, handlers_object, socket) {
 		// Reply to a WHOIS about this client.
 		// FIXME: there's some more stuff we're supposed to send...
 
+		let idle_time = Math.floor((Date.now() - conn.last_act) / 1000);
+
 		requester.numeric(311, `${conn.nick} ${conn.user} ${conn.address} * :${conn.user}`);
+		requester.numeric(317, `${conn.nick} ${idle_time} :seconds idle`);
 		requester.numeric(318, `${conn.nick} :End of /WHOIS list`);
 	};
 
 	conn.handle_line = (msg) => {
 
 		log_input(conn, msg);
+		conn.last_act = Date.now();
 
 		let tokens = tokenize_line_from_client(msg);
 
