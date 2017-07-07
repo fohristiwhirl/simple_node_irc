@@ -165,14 +165,14 @@ function make_irc_server() {
 	};
 
 	irc.nick_in_use = (nick) => {
-		if (irc.conns[nick] !== undefined) {
+		if (irc.conns[nick.toLowerCase()] !== undefined) {
 			return true;
 		}
 		return false;
 	};
 
 	irc.conn_from_nick = (nick) => {
-		return irc.conns[nick];				// Can return undefined
+		return irc.conns[nick.toLowerCase()];		// Can return undefined
 	};
 
 	irc.disconnect = (conn, reason) => {
@@ -183,7 +183,7 @@ function make_irc_server() {
 
 		// But if they are not in our map of users, we can just return...
 
-		if (conn === undefined || irc.conns[conn.nick] === undefined) {
+		if (conn === undefined || irc.conns[conn.nick.toLowerCase()] === undefined) {
 			log_event(`Unregistered user ${conn.address}:${conn.port} disconnected`);
 			return;
 		}
@@ -203,11 +203,11 @@ function make_irc_server() {
 			out_conn.write(`:${conn.source()} QUIT :${reason}` + "\r\n");
 		});
 
-		delete irc.conns[conn.nick];
+		delete irc.conns[conn.nick.toLowerCase()];
 	};
 
 	irc.add_conn = (conn) => {				// Should be called once per client, exactly when conn.nick is set
-		irc.conns[conn.nick] = conn;
+		irc.conns[conn.nick.toLowerCase()] = conn;
 	};
 
 	irc.change_nick = (conn, old_nick, new_nick) => {
@@ -234,17 +234,17 @@ function make_irc_server() {
 
 		conn.nick = new_nick;
 
-		irc.conns[new_nick] = conn;
+		irc.conns[new_nick.toLowerCase()] = conn;
 
 		if (old_nick === undefined) {
 			irc.add_conn(conn);				// irc.add_conn() should be called the moment a conn gets its first nick, regardless of whether registration is complete.
 		} else {
-			delete irc.conns[old_nick];
+			delete irc.conns[old_nick.toLowerCase()];
 		}
 	};
 
 	irc.get_channel = (chan_name) => {
-		return irc.channels[chan_name];		// Can return undefined
+		return irc.channels[chan_name.toLowerCase()];		// Can return undefined
 	}
 
 	irc.get_or_make_channel = (chan_name) => {
@@ -253,22 +253,25 @@ function make_irc_server() {
 			return undefined;
 		}
 
-		if (irc.channels[chan_name] === undefined) {
-			irc.channels[chan_name] = make_channel(chan_name, () => irc.close_channel(chan_name));
+		// The channel name is allowed to have uppercase characters, but we store it in our map as lowercase.
+
+		if (irc.channels[chan_name.toLowerCase()] === undefined) {
+			irc.channels[chan_name.toLowerCase()] = make_channel(chan_name, () => irc.close_channel(chan_name));
 			log_event(`Creating channel ${chan_name}`);
 		}
 
-		return irc.channels[chan_name];
+		return irc.channels[chan_name.toLowerCase()];
 	};
 
 	irc.close_channel = (chan_name) => {
-		delete irc.channels[chan_name];
+		delete irc.channels[chan_name.toLowerCase()];
 		log_event(`Closing channel ${chan_name}`);
 	};
 
 	irc.isupport = (conn) => {
 
 		const parts = {
+			CASEMAPPING:	"ascii",
 			CHANTYPES:		"#",
 			MAXCHANNELS:	MAX_CHANNELS_PER_USER,
 			NICKLEN:		MAX_NAME_LENGTH,
