@@ -533,7 +533,7 @@ function new_connection(irc_object, handlers_object, socket) {
 	conn.part = (chan_name, silent) => {
 
 		chan_name = sanitize_channel_name(chan_name);		// No need to check for legality of channel name
-		let channel = conn.irc.get_channel[chan_name];
+		let channel = conn.irc.get_channel(chan_name);
 
 		if (channel === undefined) {
 			return;
