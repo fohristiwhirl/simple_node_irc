@@ -7,6 +7,8 @@ random.seed()
 serveraddr = '127.0.0.1'
 serverport = 6667
 
+channel = random.choice(["#test", "#TEST"])
+
 letters = "abcdefghijklmnopqrstuvwxyz"
 
 words = """area book business case child company country day eye fact family government group hand home job life
@@ -27,14 +29,14 @@ s.setblocking(False)
 
 s.send("NICK {}\n".format(nick).encode("ascii"))
 s.send("USER {}\n".format(nick).encode("ascii"))
-s.send("JOIN #test\n".encode("ascii"))
+s.send("JOIN {}\n".format(channel).encode("ascii"))
 
 last_msg_time = time.time();
 last_nick_time = time.time()
 
 while True:
 	if time.time() - last_msg_time > 5:
-		s.send("PRIVMSG #test :{}\n".format(generate_sentence()).encode("ascii"))
+		s.send("PRIVMSG {} :{}\n".format(channel, generate_sentence()).encode("ascii"))
 		last_msg_time = time.time();
 	if time.time() - last_nick_time > 30:
 		s.send("NICK {}\n".format(generate_nick()).encode("ascii"))
