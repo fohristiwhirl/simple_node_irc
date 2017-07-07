@@ -43,18 +43,6 @@ const STARTUP_TIME = (new Date()).toTimeString();
 
 // ---------------------------------------------------------------------------------------------------
 
-function values(obj) {												// Like Object.values() I think.
-	let list = [];
-
-	for (let key in obj) {
-		if (Object.prototype.hasOwnProperty.call(obj, key)) {		// Works even for prototype-less objects that don't have hasOwnProperty() available
-			list.push(obj[key]);
-		}
-	}
-
-	return list;
-}
-
 function is_alphanumeric(str) {
 	for (let i = 0; i < str.length; i += 1) {
 		let code = str.charCodeAt(i);
@@ -166,15 +154,11 @@ function make_channel(chan_name, close_function) {
 	};
 
 	channel.conn_list = () => {
-		return values(channel.conns);
+		return Object.keys(channel.conns).map((uid) => channel.conns[uid]);
 	};
 
 	channel.nick_list = () => {
-		let ret = [];
-		channel.conn_list().forEach((conn) => {
-			ret.push(conn.nick);
-		});
-		return ret;
+		return Object.keys(channel.conns).map((uid) => channel.conns[uid].nick);
 	};
 
 	channel.remove_conn = (conn, silent) => {
@@ -441,8 +425,12 @@ function new_connection(irc_object, handlers_object, socket) {
 	};
 
 	conn.channel_list = () => {
-		return values(conn.channels);
+		return Object.keys(conn.channels).map((name) => conn.channels[name]);
 	};
+
+	conn.channel_count = () => {
+		return Object.keys(conn.channels).length;
+	}
 
 	conn.viewer_list = () => {					// Return a list of conns that can see this client (i.e. in channels).
 
@@ -456,7 +444,7 @@ function new_connection(irc_object, handlers_object, socket) {
 			});
 		});
 
-		return values(all_viewers);				// Note we return an array of conn objects, not the map above.
+		return Object.keys(all_viewers).map((nick) => all_viewers[nick]);
 	};
 
 	conn.write = (msg) => {
