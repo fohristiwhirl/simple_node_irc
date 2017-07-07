@@ -35,6 +35,7 @@ const PORT = 6667;
 
 const MAX_USERS_PER_CHANNEL = 50;
 const MAX_USERS_PER_SERVER = 500;
+const MAX_CHANNELS_PER_USER = 5;
 
 const LOG_INPUTS = true;
 const LOG_EVENTS = true;
@@ -161,9 +162,36 @@ function make_channel(chan_name, close_function) {
 		return Object.keys(channel.conns).map((uid) => channel.conns[uid].nick);
 	};
 
+	channel.full = () => {
+		return channel.user_count >= MAX_USERS_PER_CHANNEL;
+	};
+
+	channel.user_present = (conn) => {
+		return channel.conns[conn.uid] !== undefined;
+	};
+
+	channel.add_conn = (conn) => {				// Returns true or false: whether the connection was allowed
+
+		if (channel.user_present(conn)) {
+			return false;
+		}
+
+		if (channel.full()) {
+			conn.numeric(471, `${chan_name} :Channel is full`);
+			return false;
+		}
+
+		channel.conns[conn.uid] = conn;
+		channel.user_count += 1;
+
+		channel.raw_send_all(`:${conn.source()} JOIN ${channel.name}`);
+
+		return true;
+	};
+
 	channel.remove_conn = (conn, silent) => {
 
-		if (channel.conns[conn.uid] === undefined) {
+		if (channel.user_present(conn) === false) {
 			return;
 		}
 
@@ -179,27 +207,6 @@ function make_channel(chan_name, close_function) {
 		}
 	};
 
-	channel.full = () => {
-		return channel.user_count >= MAX_USERS_PER_CHANNEL;
-	};
-
-	channel.user_present = (conn) => {
-		return channel.conns[conn.uid] !== undefined;
-	};
-
-	channel.add_conn = (conn) => {
-		if (channel.full()) {			// The caller should already have checked this, so it can send an error.
-			warning(`channel.add_conn() called but channel ${channel.name} is full`);
-			return;
-		}
-		if (channel.user_present(conn)) {
-			return;
-		}
-		channel.conns[conn.uid] = conn;
-		channel.user_count += 1;
-		channel.raw_send_all(`:${conn.source()} JOIN ${channel.name}`);
-	};
-
 	channel.raw_send_all = (msg) => {
 		channel.conn_list().forEach((conn) => {
 			conn.write(msg + "\r\n");
@@ -208,12 +215,14 @@ function make_channel(chan_name, close_function) {
 
 	channel.normal_message = (conn, msg) => {
 
+		msg = msg.trim();
+
 		if (msg.length < 1) {
 			return;
 		}
 
 		if (channel.conns[conn.uid] === undefined) {
-			warning(`channel.normal_message() called but channel thinks ${conn.nick} is not in channel`);
+			conn.numeric(404, ":Cannot send to channel");
 			return;
 		}
 
@@ -311,11 +320,18 @@ function make_irc_server() {
 
 	irc.set_first_nick = (conn, new_nick) => {
 
-		// The caller should already have checked legality.
-		// That way it can send the client an appropriate error.
+		if (conn.nick !== undefined) {
+			warning(`irc.set_first_nick() called but conn.nick was already ${conn.nick}`);
+			return;
+		}
 
-		if (irc.nick_in_use(new_nick) || nick_is_legal(new_nick) === false) {
-			warning(`irc.set_first_nick() called with invalid or in-use nick ${new_nick}`);
+		if (irc.nick_in_use(new_nick)) {
+			conn.numeric(433, ":Nickname is already in use");
+			return;
+		}
+
+		if (nick_is_legal(new_nick) === false) {
+			conn.numeric(432, ":Erroneus nickname");
 			return;
 		}
 
@@ -325,11 +341,13 @@ function make_irc_server() {
 
 	irc.change_nick = (conn, old_nick, new_nick) => {
 
-		// The caller should already have checked legality.
-		// That way it can send the client an appropriate error.
+		if (irc.nick_in_use(new_nick)) {
+			conn.numeric(433, ":Nickname is already in use");
+			return;
+		}
 
-		if (irc.nick_in_use(new_nick) || nick_is_legal(new_nick) === false) {
-			warning(`irc.change_nick() called with invalid or in-use nick ${new_nick}`);
+		if (nick_is_legal(new_nick) === false) {
+			conn.numeric(432, ":Erroneus nickname");
 			return;
 		}
 
@@ -346,10 +364,13 @@ function make_irc_server() {
 		conn.nick = new_nick;
 	};
 
+	irc.get_channel = (chan_name) => {
+		return irc.channels[chan_name];		// Can return undefined
+	}
+
 	irc.get_or_make_channel = (chan_name) => {
 
 		if (chan_is_legal(chan_name) === false) {
-			warning(`irc.get_or_make_channel(${chan_name}) called with illegal channel name`);
 			return undefined;
 		}
 
@@ -470,35 +491,39 @@ function new_connection(irc_object, handlers_object, socket) {
 
 	conn.join = (chan_name) => {
 
-		if (chan_is_legal(chan_name) === false) {
-			return;
-		}
+		chan_name = sanitize_channel_name(chan_name);
 
 		if (conn.channels[chan_name] !== undefined) {		// We're already in this channel
 			return;
 		}
 
-		let channel = conn.irc.get_or_make_channel(chan_name);
-
-		if (channel === undefined) {						// Should be impossible
-			warning(`conn.join() got an undefined channel from irc.get_or_make_channel(${chan_name})`);
+		if (conn.channel_count() >= MAX_CHANNELS_PER_USER) {
+			conn.numeric(405, ":You have joined too many channels");
 			return;
 		}
 
-		if (channel.full()) {
-			conn.numeric(471, `${chan_name} :Channel is full`);
+		let channel = conn.irc.get_or_make_channel(chan_name);
+
+		if (channel === undefined) {
+			conn.numeric(403, ":Illegal channel name");
+			return;
+		}
+
+		let success = channel.add_conn(conn);
+
+		if (success === false) {
 			return;
 		}
 
 		conn.channels[chan_name] = channel;
 
-		channel.add_conn(conn);
 		channel.name_reply(conn);							// Send a RPL_NAMREPLY to the client (list of users in channel)
 		channel.topic_reply(conn);							// Send a RPL_NOTOPIC or RPL_TOPIC to the client
 	};
 
 	conn.part = (chan_name, silent) => {
 
+		chan_name = sanitize_channel_name(chan_name);		// No need to check for legality of channel name
 		let channel = conn.channels[chan_name];
 
 		if (channel === undefined) {
@@ -573,17 +598,6 @@ function make_handlers() {
 		}
 
 		let requested_nick = tokens[1];
-
-		if (nick_is_legal(requested_nick) === false) {
-			conn.numeric(432, ":Erroneus nickname");
-			return;
-		}
-
-		if (irc.nick_in_use(requested_nick) ) {
-			conn.numeric(433, ":Nickname is already in use");
-			return;
-		}
-
 		let old_nick = conn.nick;
 
 		if (old_nick !== undefined) {
@@ -592,10 +606,9 @@ function make_handlers() {
 			irc.set_first_nick(conn, requested_nick);
 		}
 
-		// The above call should have set conn.nick. If it somehow didn't...
+		// If all went well, conn.nick was just set to requested_nick, otherwise, bail out...
 
 		if (conn.nick !== requested_nick) {
-			warning(`handle_NICK() seemed to succeed but conn.nick (${conn.nick}) !== requested_nick (${requested_nick})`);
 			return;
 		}
 
@@ -632,13 +645,7 @@ function make_handlers() {
 			return;
 		}
 
-		let chan_name = sanitize_channel_name(tokens[1]);
-
-		if (chan_is_legal(chan_name) === false) {
-			return;
-		}
-
-		conn.join(chan_name);
+		conn.join(tokens[1]);
 	};
 
 	handlers.handle_PART = (irc, conn, tokens) => {
@@ -647,13 +654,7 @@ function make_handlers() {
 			return;
 		}
 
-		let chan_name = sanitize_channel_name(tokens[1]);
-
-		if (chan_is_legal(chan_name) === false) {
-			return;
-		}
-
-		conn.part(chan_name, false);
+		conn.part(tokens[1], false);
 	};
 
 	handlers.handle_PRIVMSG = (irc, conn, tokens) => {
@@ -663,15 +664,10 @@ function make_handlers() {
 		}
 
 		let chan_name = sanitize_channel_name(tokens[1]);
+		let channel = irc.get_channel(chan_name);
 
-		if (chan_is_legal(chan_name) === false) {
-			return;
-		}
-
-		let channel = conn.channels[chan_name];
-
-		if (channel === undefined) {							// User isn't in the channel
-			conn.numeric(404, ":Cannot send to channel");
+		if (channel === undefined) {
+			conn.numeric(403, ":No such channel");
 			return;
 		}
 
