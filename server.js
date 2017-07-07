@@ -573,9 +573,12 @@ function new_connection(irc_object, handlers_object, socket) {
 
 		let handler = conn.handlers["handle_" + tokens[0]];
 
-		if (typeof(handler) === "function") {
-			handler(conn.irc, conn, tokens);
+		if (typeof(handler) !== "function") {
+			conn.numeric(421, `${tokens[0]} :Unknown command`);
+			return;
 		}
+
+		handler(conn.irc, conn, tokens);
 	};
 }
 
