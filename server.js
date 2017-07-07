@@ -1,5 +1,10 @@
 "use strict";
 
+const net = require("net");
+
+const SERVER = "127.0.0.1";
+const PORT = 6667;
+
 /*
 	A simple-minded IRC server written as an exercise in NodeJS.
 	See https://modern.ircdocs.horse for useful docs.
@@ -27,12 +32,7 @@
 	Also, there probably aren't worthwhile performance benefits.
 */
 
-const assert = require("assert");
-const net = require("net");
-
 const SOFTWARE = "Simple Node IRC";
-const SERVER = "127.0.0.1";
-const PORT = 6667;
 
 const MAX_USERS_PER_CHANNEL = 50;
 const MAX_USERS_PER_SERVER = 500;
