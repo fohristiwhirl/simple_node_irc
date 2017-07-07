@@ -36,7 +36,9 @@ const SOFTWARE = "Simple Node IRC";
 
 const MAX_USERS_PER_CHANNEL = 50;
 const MAX_USERS_PER_SERVER = 500;
-const MAX_CHANNELS_PER_USER = 5;
+const MAX_CHANNELS_PER_USER = 10;
+
+const MAX_NAME_LENGTH = 30;
 
 const LOG_INPUTS = true;
 const LOG_EVENTS = true;
@@ -56,18 +58,18 @@ function is_alphanumeric(str) {
 }
 
 function nick_is_legal(str) {
-	return str.length > 0 && is_alphanumeric(str);
+	return str.length > 0 && str.length <= MAX_NAME_LENGTH && is_alphanumeric(str);
 }
 
 function user_is_legal(str) {
-	return str.length > 0 && is_alphanumeric(str);
+	return str.length > 0 && str.length <= MAX_NAME_LENGTH && is_alphanumeric(str);
 }
 
 function chan_is_legal(str) {
 	if (str.charAt(0) !== "#") {
 		return false;
 	}
-	if (str.length > 1 && is_alphanumeric(str.slice(1))) {
+	if (str.length > 1 && str.length <= MAX_NAME_LENGTH && is_alphanumeric(str.slice(1))) {
 		return true;
 	}
 	return false;
@@ -264,6 +266,20 @@ function make_irc_server() {
 		log_event(`Closing channel ${chan_name}`);
 	};
 
+	irc.isupport = (conn) => {
+
+		const parts = {
+			CHANTYPES:		"#",
+			MAXCHANNELS:	MAX_CHANNELS_PER_USER,
+			NICKLEN:		MAX_NAME_LENGTH,
+			CHANNELLEN:		MAX_NAME_LENGTH,
+		};
+
+		let msg = Object.keys(parts).map(key => `${key}=${parts[key]}`).join(" ");
+
+		conn.numeric(5, msg + " :are supported by this server");
+	}
+
 	return irc;
 }
 
@@ -282,11 +298,11 @@ function make_channel(chan_name, close_function) {
 	};
 
 	channel.conn_list = () => {
-		return Object.keys(channel.conns).map((uid) => channel.conns[uid]);
+		return Object.keys(channel.conns).map(uid => channel.conns[uid]);
 	};
 
 	channel.nick_list = () => {
-		return Object.keys(channel.conns).map((uid) => channel.conns[uid].nick);
+		return Object.keys(channel.conns).map(uid => channel.conns[uid].nick);
 	};
 
 	channel.full = () => {
@@ -434,7 +450,7 @@ function new_connection(irc_object, handlers_object, socket) {
 	};
 
 	conn.channel_list = () => {
-		return Object.keys(conn.channels).map((name) => conn.channels[name]);
+		return Object.keys(conn.channels).map(name => conn.channels[name]);
 	};
 
 	conn.channel_count = () => {
@@ -453,7 +469,7 @@ function new_connection(irc_object, handlers_object, socket) {
 			});
 		});
 
-		return Object.keys(all_viewers).map((nick) => all_viewers[nick]);
+		return Object.keys(all_viewers).map(nick => all_viewers[nick]);
 	};
 
 	conn.write = (msg) => {
@@ -532,6 +548,7 @@ function new_connection(irc_object, handlers_object, socket) {
 		conn.numeric(1, `:Welcome to the server!`);
 		conn.numeric(2, `:Your host is ${SERVER}, running ${SOFTWARE}`);
 		conn.numeric(3, `:This server started up at ${STARTUP_TIME}`);
+		conn.irc.isupport(conn);
 		log_event(`${conn.nick} finished registering`);
 	};
 
