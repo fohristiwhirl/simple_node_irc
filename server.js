@@ -170,7 +170,10 @@ function make_channel(chan_name, close_function) {
 		return channel.conns[conn.uid] !== undefined;
 	};
 
-	channel.add_conn = (conn) => {				// Returns true or false: whether the connection was allowed
+	channel.add_conn = (conn) => {
+
+		// Returns true or false: whether the connection was allowed...
+		// The calling conn then needs to update its own record of what channels it is in, accordingly.
 
 		if (channel.user_present(conn)) {
 			return false;
@@ -221,7 +224,7 @@ function make_channel(chan_name, close_function) {
 			return;
 		}
 
-		if (channel.conns[conn.uid] === undefined) {
+		if (channel.conns[conn.uid] === undefined) {			// User is not in the channel
 			conn.numeric(404, ":Cannot send to channel");
 			return;
 		}
@@ -511,7 +514,7 @@ function new_connection(irc_object, handlers_object, socket) {
 
 		let success = channel.add_conn(conn);
 
-		if (success === false) {
+		if (success !== true) {
 			return;
 		}
 
