@@ -716,6 +716,13 @@ function make_handlers() {
 
 function main() {
 
+	process.on('uncaughtException', (err) => {
+		console.log("\n\n\n");
+		console.error(err);
+		console.log("\n\n\n");
+		process.stderr.write("\x07");	// Beep
+	});
+
 	let irc = make_irc_server();
 	let handlers = make_handlers();
 
