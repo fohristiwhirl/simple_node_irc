@@ -493,7 +493,7 @@ function new_connection(irc_object, handlers_object, socket) {
 		let channel = conn.irc.get_or_make_channel(chan_name);
 
 		if (channel === undefined) {						// Should be impossible
-			warning("conn.join() got an undefined channel from irc.get_or_make_channel($chan_name)");
+			warning(`conn.join() got an undefined channel from irc.get_or_make_channel(${chan_name})`);
 			return;
 		}
 
