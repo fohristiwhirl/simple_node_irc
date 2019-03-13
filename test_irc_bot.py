@@ -28,7 +28,6 @@ def connect():
 	s.send("USER {}\n".format(generate_nick()).encode("ascii"))
 
 def disconnect():
-	global s
 	s.close()
 
 def reconnect():
