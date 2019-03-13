@@ -371,7 +371,7 @@ function make_channel(chan_name, close_function) {
 		}
 
 		if (channel.conns[conn.uid] === undefined) {			// User is not in the channel
-			conn.numeric(404, ":Cannot send to channel");
+			conn.numeric(404, `${channel.name} :Cannot send to channel`);
 			return;
 		}
 
@@ -716,7 +716,7 @@ function make_handlers() {
 
 function main() {
 
-	process.on('uncaughtException', (err) => {
+	process.on("uncaughtException", (err) => {
 		console.log("\n\n\n");
 		console.error(err);
 		console.log("\n\n\n");
